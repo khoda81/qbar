@@ -79,6 +79,41 @@ The source selects the coarsest preferred tick contained in `(lower, upper]`,
 writes its value, local family spacing, and numeric family identifier to `out`,
 then returns `true`.
 
+## Web Component
+
+The optional `qbar/element` entry point renders the raster as SVG. It defaults
+to a vertical probability axis so labels remain horizontal.
+
+```ts
+import { decimalTicks } from "qbar";
+import { defineQBar } from "qbar/element";
+
+defineQBar();
+
+const element = document.querySelector("q-bar")!;
+element.quantile = (probability) => model.quantile(probability);
+element.tickSource = decimalTicks({ multipliers: [1, 2, 5] });
+element.formatTick = (value) => `${value.toFixed(0)} min`;
+```
+
+```html
+<q-bar></q-bar> <q-bar orientation="horizontal"></q-bar>
+```
+
+Importing `qbar/element` does not register anything globally. Call
+`defineQBar()` when the application is ready to claim the `<q-bar>` name.
+Mutable models can call `element.refresh()` after updating in place.
+
+The element inherits typography and color. These CSS variables customize its
+basic appearance:
+
+```css
+q-bar {
+  --qbar-color: currentColor;
+  --qbar-axis-opacity: 0.25;
+}
+```
+
 ## Development
 
 ```sh

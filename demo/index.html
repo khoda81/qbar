@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>qbar frontend demo</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: ui-monospace, monospace;
+      }
+
+      body {
+        align-items: center;
+        background: #111318;
+        color: #ecf1f7;
+        display: flex;
+        gap: 5rem;
+        justify-content: center;
+        margin: 0;
+        min-height: 100vh;
+      }
+
+      figure {
+        margin: 0;
+      }
+
+      figcaption {
+        color: #9da9b8;
+        margin-block-end: 1rem;
+      }
+
+      q-bar {
+        --qbar-axis-opacity: 0.2;
+        --qbar-color: #8bd5ff;
+        font-size: 12px;
+      }
+
+      q-bar[orientation="horizontal"] {
+        --qbar-color: #a6e3a1;
+      }
+    </style>
+  </head>
+  <body>
+    <figure>
+      <figcaption>Vertical probability axis</figcaption>
+      <q-bar id="vertical"></q-bar>
+    </figure>
+
+    <figure>
+      <figcaption>Horizontal probability axis</figcaption>
+      <q-bar id="horizontal" orientation="horizontal"></q-bar>
+    </figure>
+
+    <script type="module">
+      import { decimalTicks } from "../dist/index.js";
+      import { defineQBar } from "../dist/element.js";
+
+      defineQBar();
+
+      const ticks = decimalTicks({ multipliers: [1, 2, 5] });
+      const quantile = (probability) => {
+        if (probability === 0) return -Infinity;
+        if (probability === 1) return Infinity;
+        return 35 + 4 * Math.log(probability / (1 - probability));
+      };
+
+      for (const element of document.querySelectorAll("q-bar")) {
+        element.quantile = quantile;
+        element.tickSource = ticks;
+        element.formatTick = (value) => `${value.toFixed(0)} min`;
+      }
+    </script>
+  </body>
+</html>
