@@ -87,5 +87,5 @@ bun run check
 bun run build
 ```
 
-The package is intentionally marked private and unlicensed while its public API
-is being designed.
+The package remains private while its public API is being designed. It is
+licensed under the MIT License.
