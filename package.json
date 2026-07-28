@@ -1,0 +1,27 @@
+{
+  "name": "qbar",
+  "version": "0.1.0",
+  "description": "A pixel-resolution quantile rasterizer",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "check": "tsc --noEmit && npm test"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  }
+}
