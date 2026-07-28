@@ -114,6 +114,13 @@ q-bar {
 }
 ```
 
+The live demo covers clock time, durations, currency, heavy-tailed recovery
+estimates, and compact horizontal latency bars:
+
+```sh
+bun run demo
+```
+
 ## Development
 
 ```sh

@@ -23,6 +23,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "bun run build && node --test test/*.test.mjs",
+    "demo": "bun run build && bun ./demo/index.html",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check": "tsc --noEmit && bun run test && bun run format:check"
