@@ -18,10 +18,13 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "npm run build && node --test test/*.test.mjs",
-    "check": "tsc --noEmit && npm test"
+    "test": "bun run build && node --test test/*.test.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check": "tsc --noEmit && bun run test && bun run format:check"
   },
   "devDependencies": {
+    "prettier": "^3.9.6",
     "typescript": "^7.0.2"
   }
 }
