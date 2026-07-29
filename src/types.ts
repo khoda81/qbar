@@ -24,7 +24,7 @@ export interface MutableTickSelection {
  * This avoids allocating one object for every screen pixel.
  */
 export interface TickSource {
-  select(lower: number, upper: number, out: MutableTickSelection): boolean;
+  select(lower: number, upper: number, out: MutableTickSelection): void;
 }
 
 export type VisibilityFunction = (pixelSpacing: number) => number;

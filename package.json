@@ -23,10 +23,11 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "bun run build && node --test test/*.test.mjs",
-    "demo": "bun run build && bun ./demo/index.html",
+    "demo": "bun ./demo/index.html",
+    "demo:dist": "bun run build && bun ./demo/index.html",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "check": "tsc --noEmit && bun run test && bun run format:check"
+    "check": "tsc --noEmit && tsc --noEmit -p tsconfig.demo.json && bun run test && bun run format:check"
   },
   "devDependencies": {
     "prettier": "^3.9.6",

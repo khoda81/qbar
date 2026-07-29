@@ -197,7 +197,7 @@
         border: 1px solid var(--border);
         border-radius: 1.4rem;
         box-shadow: 0 1.5rem 5rem rgba(0, 0, 0, 0.18);
-        min-height: 25rem;
+        container-type: inline-size;
         overflow: hidden;
         padding: clamp(1.15rem, 2.2vw, 1.65rem);
         position: relative;
@@ -271,29 +271,39 @@
 
       .card__content {
         display: grid;
-        gap: 1rem;
-        grid-template-columns: minmax(0, 1fr) minmax(7rem, 9.5rem);
+        gap: 2rem;
+        grid-template-columns: 4rem minmax(0, 1fr);
         margin-block-start: 1.5rem;
-        min-height: 20rem;
+        min-inline-size: 0;
         position: relative;
         z-index: 1;
       }
 
       .card--connection .card__content {
-        grid-template-columns: minmax(0, 1fr) minmax(9rem, 11rem);
+        grid-template-columns: 4rem minmax(0, 1fr);
       }
 
       .reading {
         align-self: start;
+        min-inline-size: 0;
+        overflow: hidden;
       }
 
       .reading__value {
-        font-size: clamp(2.2rem, 4vw, 4.4rem);
+        font-size: clamp(1.9rem, 3.5vw, 4rem);
+        font-size: clamp(1.9rem, 10cqi, 4rem);
         font-variant-numeric: tabular-nums;
         font-weight: 510;
         letter-spacing: -0.06em;
         line-height: 0.95;
         margin: 0;
+        max-inline-size: 100%;
+        white-space: nowrap;
+      }
+
+      .card--connection .reading__value {
+        font-size: clamp(2.1rem, 4vw, 4.4rem);
+        font-size: clamp(2.1rem, 11cqi, 4.4rem);
       }
 
       .reading__unit {
@@ -338,39 +348,22 @@
       }
 
       .bar-stage {
+        block-size: 100%;
         min-height: 0;
+        min-inline-size: 0;
+        overflow: visible;
         position: relative;
-      }
-
-      .bar-stage::before,
-      .bar-stage::after {
-        color: var(--muted);
-        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-        font-size: 0.58rem;
-        left: 0;
-        opacity: 0.58;
-        position: absolute;
-        z-index: 2;
-      }
-
-      .bar-stage::before {
-        content: "P100";
-        top: -0.2rem;
-      }
-
-      .bar-stage::after {
-        bottom: -0.2rem;
-        content: "P0";
       }
 
       .bar-stage q-bar {
         --qbar-axis-opacity: 0.18;
         --qbar-color: var(--accent);
+        display: block;
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
         font-size: 0.67rem;
-        height: 100%;
-        min-height: 18rem;
-        width: 100%;
+        block-size: 100%;
+        inline-size: 100%;
+        min-block-size: 0;
       }
 
       .fleet {
@@ -610,6 +603,9 @@
             <span class="badge">connection</span>
           </header>
           <div class="card__content">
+            <div class="bar-stage">
+              <q-bar id="connection-bar"></q-bar>
+            </div>
             <div class="reading">
               <p class="reading__value" id="connection-value">—</p>
               <p class="reading__unit" id="connection-context">—</p>
@@ -625,9 +621,6 @@
                 </div>
               </dl>
             </div>
-            <div class="bar-stage">
-              <q-bar id="connection-bar"></q-bar>
-            </div>
           </div>
         </article>
 
@@ -640,6 +633,9 @@
             <span class="badge">heavy tail</span>
           </header>
           <div class="card__content">
+            <div class="bar-stage">
+              <q-bar id="download-bar"></q-bar>
+            </div>
             <div class="reading">
               <p class="reading__value" id="download-value">—</p>
               <p class="reading__unit" id="download-context">—</p>
@@ -655,9 +651,6 @@
                 </div>
               </dl>
             </div>
-            <div class="bar-stage">
-              <q-bar id="download-bar"></q-bar>
-            </div>
           </div>
         </article>
 
@@ -670,6 +663,9 @@
             <span class="badge">symmetric</span>
           </header>
           <div class="card__content">
+            <div class="bar-stage">
+              <q-bar id="market-bar"></q-bar>
+            </div>
             <div class="reading">
               <p class="reading__value" id="market-value">—</p>
               <p class="reading__unit">Median projected execution price</p>
@@ -685,9 +681,6 @@
                 </div>
               </dl>
             </div>
-            <div class="bar-stage">
-              <q-bar id="market-bar"></q-bar>
-            </div>
           </div>
         </article>
 
@@ -700,6 +693,9 @@
             <span class="badge">right-skewed</span>
           </header>
           <div class="card__content">
+            <div class="bar-stage">
+              <q-bar id="recovery-bar"></q-bar>
+            </div>
             <div class="reading">
               <p class="reading__value" id="recovery-value">—</p>
               <p class="reading__unit">Median time until healthy traffic</p>
@@ -714,9 +710,6 @@
                   <dd id="recovery-tail">—</dd>
                 </div>
               </dl>
-            </div>
-            <div class="bar-stage">
-              <q-bar id="recovery-bar"></q-bar>
             </div>
           </div>
         </article>
@@ -763,6 +756,6 @@
       </footer>
     </div>
 
-    <script type="module" src="./demo.js"></script>
+    <script type="module" src="./demo.ts"></script>
   </body>
 </html>

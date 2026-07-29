@@ -87,9 +87,7 @@ export function fillTickRaster(
       continue;
     }
 
-    if (!ticks.select(lower, upper, selection)) {
-      continue;
-    }
+    ticks.select(lower, upper, selection);
 
     const binRange = upper - lower;
     const pixelSpacing =
@@ -121,8 +119,5 @@ export function rasterizeQuantiles(options: RasterizeOptions): QuantileRaster {
   );
   const raster = fillTickRaster(boundaries, options.ticks, options);
 
-  return {
-    boundaries,
-    ...raster,
-  };
+  return { boundaries, ...raster };
 }

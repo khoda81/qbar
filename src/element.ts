@@ -14,12 +14,14 @@ const HTMLElementBase =
 
 const styles = `
   :host {
+    box-sizing: border-box;
     color: inherit;
-    contain: layout paint style;
+    contain: size layout style;
     display: inline-block;
     height: 10rem;
     min-height: 1px;
     min-width: 1px;
+    vertical-align: top;
     width: 7rem;
   }
 
@@ -31,7 +33,7 @@ const styles = `
   svg {
     display: block;
     height: 100%;
-    overflow: hidden;
+    overflow: visible;
     width: 100%;
   }
 
@@ -243,11 +245,7 @@ export class QBarElement extends HTMLElementBase {
       const value = raster.values[index]!;
       const opacity = raster.visibility[index]!;
 
-      if (
-        !Number.isFinite(value) ||
-        !Number.isFinite(opacity) ||
-        opacity < MINIMUM_VISIBLE_OPACITY
-      ) {
+      if (!Number.isFinite(opacity) || opacity < MINIMUM_VISIBLE_OPACITY) {
         continue;
       }
 

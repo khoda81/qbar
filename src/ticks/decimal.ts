@@ -60,23 +60,19 @@ export class DecimalTickSource implements TickSource {
     }
   }
 
-  select(lower: number, upper: number, out: MutableTickSelection): boolean {
-    if (
-      !Number.isFinite(lower) ||
-      !Number.isFinite(upper) ||
-      upper < lower ||
-      lower === upper
-    ) {
-      return false;
+  select(lower: number, upper: number, out: MutableTickSelection): void {
+    out.spacing = 0;
+    if (upper < lower) {
+      return;
     }
 
     // The origin belongs to every level in the hierarchy, so it is the
     // maximally stable anchor rather than an arbitrary finite family member.
-    if (lower < this.origin && this.origin <= upper) {
+    if (lower <= this.origin && this.origin <= upper) {
       out.value = this.origin;
       out.spacing = Infinity;
       out.level = Infinity;
-      return true;
+      return;
     }
 
     const relativeLower = lower - this.origin;
@@ -85,10 +81,6 @@ export class DecimalTickSource implements TickSource {
       Math.abs(relativeLower),
       Math.abs(relativeUpper),
     );
-
-    if (!Number.isFinite(magnitude) || magnitude === 0) {
-      return false;
-    }
 
     const estimatedExponent = Math.floor(Math.log10(magnitude)) + 1;
     const startExponent = Math.min(this.maxExponent, estimatedExponent);
@@ -109,27 +101,17 @@ export class DecimalTickSource implements TickSource {
         const multiplier = this.multipliers[multiplierIndex]!;
         const spacing = multiplier * power;
 
-        if (!Number.isFinite(spacing) || spacing === 0) {
-          continue;
-        }
-
         const tickIndex = Math.floor(relativeUpper / spacing);
         const value = this.origin + tickIndex * spacing;
-        const tolerance =
-          Number.EPSILON *
-          8 *
-          Math.max(1, Math.abs(lower), Math.abs(upper), Math.abs(value));
 
-        if (value > lower + tolerance && value <= upper + tolerance) {
+        if (lower < value && value <= upper) {
           out.value = value;
           out.spacing = spacing;
           out.level = exponent * this.multipliers.length + multiplierIndex;
-          return true;
+          return;
         }
       }
     }
-
-    return false;
   }
 }
 

@@ -159,15 +159,17 @@ export class CalendarTickSource implements TickSource {
     this.levels = normalizeLevels(options.levels ?? DEFAULT_LEVELS);
   }
 
-  select(lower: number, upper: number, out: MutableTickSelection): boolean {
-    if (!Number.isFinite(lower) || !Number.isFinite(upper) || upper <= lower) {
-      return false;
+  select(lower: number, upper: number, out: MutableTickSelection): void {
+    out.spacing = 0;
+
+    if (upper < lower) {
+      return;
     }
 
     for (const level of this.levels) {
       const boundary = floorCalendarBoundary(upper, level);
 
-      if (!Number.isFinite(boundary) || boundary <= lower || boundary > upper) {
+      if (!Number.isFinite(boundary) || upper < boundary || boundary <= lower) {
         continue;
       }
 
@@ -181,10 +183,8 @@ export class CalendarTickSource implements TickSource {
       out.value = boundary;
       out.spacing = spacing;
       out.level = level.code;
-      return true;
+      return;
     }
-
-    return false;
   }
 }
 
