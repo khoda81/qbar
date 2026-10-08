@@ -1,0 +1,21 @@
+[package]
+name = "qbar-core"
+version = "0.1.0"
+description = "Exact decimal ticks on fixed-point quantile grids"
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+num-bigint = "0.5"
+num-integer = "0.1"
+num-traits = "0.2"
+
+[dev-dependencies]
+proptest = "1.9"
+serde_json = "1"
+
+[[bench]]
+name = "layout"
+harness = false
+
