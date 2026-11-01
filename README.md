@@ -99,9 +99,11 @@ CDF inverted numerically. For linear quantiles the result matches the
 per-pixel definition exactly; where density changes sharply within one bucket,
 a tick can be dropped as crowded.
 
-Each pixel owns the values `(Q(i/W), Q((i+1)/W)]`, except that the first is
-closed below, so the pixels partition `[Q(0), Q(1)]` and both ends of a
-bounded bar can be ticks: a uniform bar from 0 to 40 starts with `0`.
+Each pixel owns the closed range `[Q(i/W), Q((i+1)/W)]`, so both ends of a
+bounded bar can be ticks: a uniform bar from 0 to 40 starts with `0` and
+ends with `40`. Kept ticks are always at least `minSpacing` apart; when two
+come closer, such as a tick on an edge that two buckets share, the one with
+more room wins.
 
 This works because scale steps **nest**: every tick of a coarser step is also a
 tick of each finer one. A finer tick sharing a bucket with a coarser one then

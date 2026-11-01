@@ -13,8 +13,8 @@ export interface LayoutOptions<Step> {
   readonly width: number;
   /**
    * Ticks whose same-step neighbours are closer than this many pixels are
-   * omitted. It is also the bucket width, so at most one tick per
-   * floor(minSpacing) pixels survives. Defaults to 24.
+   * omitted, and kept ticks are at least this far apart. It is also the
+   * bucket width. Defaults to 24.
    */
   readonly minSpacing?: number;
   /**
@@ -38,11 +38,14 @@ export interface Tick<Step> {
 
 /**
  * Places the coarsest tick of each floor(minSpacing)-pixel bucket and keeps it
- * if its local spacing is at least minSpacing.
+ * if its local spacing is at least minSpacing. A tick sits where Q first
+ * reaches its value, as locate() puts it.
  *
- * Pixel i owns the values (Q(i/W), Q((i+1)/W)], except the first, which is
- * closed: the pixels partition [Q(0), Q(1)], so both ends of a bounded bar
- * can be ticks.
+ * Pixel i owns the closed interval [Q(i/W), Q((i+1)/W)], so the pixels cover
+ * [Q(0), Q(1)], both ends included. Neighbouring buckets share their edge
+ * value, and with it any tick there; that duplicate lands where the first
+ * copy did, and like any tick closer than minSpacing to the one before it,
+ * only the one with more room is kept.
  *
  * The quantile is evaluated at the width / minSpacing + 1 bucket edges, then
  * bisected down to the pixel holding each bucket's candidate, at most
@@ -79,11 +82,9 @@ export function layoutTicks<Step>(options: LayoutOptions<Step>): Tick<Step>[] {
     );
     if (!(loValue < hiValue)) return undefined;
 
-    // Buckets starting at the value Q(0), at boundary 0 or on a plateau
-    // from it, are closed below. Scales take (lower, upper], and the floats
-    // in (nextDown(a), b] are exactly those in [a, b].
-    const atStart = loValue === first;
-    const lower = atStart ? nextDown(loValue) : loValue;
+    // Scales take (lower, upper]; the floats in (nextDown(a), b] are exactly
+    // those in [a, b].
+    const lower = nextDown(loValue);
     const selection = scale.select(lower, hiValue);
     if (selection === undefined) return undefined;
     const { value, step, size } = selection;
@@ -92,22 +93,27 @@ export function layoutTicks<Step>(options: LayoutOptions<Step>): Tick<Step>[] {
         `scale selected ${value} outside (${lower}, ${hiValue}]`,
       );
     }
-    // Two ticks of the coarsest step in one bucket are closer than
-    // minSpacing to each other: crowded, without locating either.
-    if (lower < value - size) return undefined;
+    // A same-step neighbour strictly inside the bucket is closer than
+    // minSpacing: crowded, without locating either. One on the lower edge
+    // can be a full bucket away.
+    if (loValue < value - size) return undefined;
 
-    // A tick at Q(0) sits at 0, where its plateau starts, and takes its
-    // density from the first pixel rising above it.
-    const onStart = value === first;
+    // The local density comes from the pixel Q rises through at the tick:
+    // for a tick on the bucket's lower edge, the first pixel rising above it.
+    const onEdge = value === loValue;
     const [pixel, from, , to] = bisect(
       sample,
       lo,
       loValue,
       hi,
       hiValue,
-      onStart ? (sampled) => value < sampled : (sampled) => value <= sampled,
+      onEdge ? (sampled) => value < sampled : (sampled) => value <= sampled,
     );
-    const position = onStart ? 0 : pixel + (value - from) / (to - from);
+    // Where Q first reaches the value; for a lower-edge tick on a plateau,
+    // that can lie in earlier buckets.
+    const position = onEdge
+      ? reach(sample, 0, first, lo, loValue, value)
+      : pixel + (value - from) / (to - from);
     const spacing =
       density === undefined
         ? size / (to - from)
@@ -127,7 +133,19 @@ export function layoutTicks<Step>(options: LayoutOptions<Step>): Tick<Step>[] {
     if (endValue < startValue) throw nondecreasing(end);
 
     const tick = place(start, startValue, end, endValue);
-    if (tick !== undefined) ticks.push(tick);
+    if (tick !== undefined) {
+      const previous = ticks.at(-1);
+      if (
+        previous === undefined ||
+        minSpacing <= tick.position - previous.position
+      ) {
+        ticks.push(tick);
+      } else if (previous.spacing < tick.spacing) {
+        // Earlier ticks are at least minSpacing before the previous one, so
+        // also before this one.
+        ticks[ticks.length - 1] = tick;
+      }
+    }
     start = end;
     startValue = endValue;
   }
@@ -156,14 +174,29 @@ export function locate(
   const first = sample(0);
   const last = sample(width);
   if (value < first || last < value) return undefined;
-  if (value === first) return 0;
+  return reach(sample, 0, first, width, last, value);
+}
 
+/**
+ * Where Q first reaches a value between boundaries lo and hi, given
+ * Q(lo) <= value <= Q(hi), interpolating inside the pixel. A pixel with an
+ * infinite boundary gives its finite edge.
+ */
+function reach(
+  sample: Sample,
+  lo: number,
+  loValue: number,
+  hi: number,
+  hiValue: number,
+  value: number,
+): number {
+  if (value <= loValue) return lo;
   const [pixel, lower, , upper] = bisect(
     sample,
-    0,
-    first,
-    width,
-    last,
+    lo,
+    loValue,
+    hi,
+    hiValue,
     (sampled) => value <= sampled,
   );
   if (lower === -Infinity) return pixel + 1;

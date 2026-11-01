@@ -24,9 +24,9 @@ function nextDown(x: number): number {
 }
 
 /**
- * Every pixel picks its coarsest tick; the definition buckets approximate.
- * Pixels own (Q(i/W), Q((i+1)/W)], except that a pixel starting at the value
- * Q(0) is closed below.
+ * Every pixel picks its coarsest tick in [Q(i/W), Q((i+1)/W)]; a value
+ * shared with the pixel before is that pixel's tick. This is the definition
+ * buckets approximate.
  */
 function perPixel<Step>(
   quantile: Quantile,
@@ -39,11 +39,9 @@ function perPixel<Step>(
     const lower = quantile(pixel / width);
     const upper = quantile((pixel + 1) / width);
     if (!(-Infinity < lower && lower < upper && upper < Infinity)) continue;
-    const selection = scale.select(
-      lower === quantile(0) ? nextDown(lower) : lower,
-      upper,
-    );
+    const selection = scale.select(nextDown(lower), upper);
     if (selection === undefined) continue;
+    if (ticks.at(-1)?.value === selection.value) continue;
     const spacing = selection.size / (upper - lower);
     if (minSpacing <= spacing) {
       ticks.push({
@@ -92,11 +90,49 @@ describe("layoutTicks", () => {
     }
   });
 
-  test("keeps nearly every per-pixel tick of a curved quantile", () => {
+  test("loses per-pixel ticks of a curved quantile only to crowding", () => {
     const reference = perPixel(logistic, scale, 1000, 24);
     const ticks = layoutTicks({ quantile: logistic, scale, width: 1000 });
     for (const tick of ticks) expect(reference).toContainEqual(tick);
-    expect(reference.length - ticks.length).toBeLessThanOrEqual(1);
+    // A missing tick is closer than minSpacing to a kept one, apart from at
+    // most one lost to the bucket shortcut.
+    const lost = reference.filter(
+      (missing) =>
+        !ticks.some(
+          (tick) =>
+            tick.value === missing.value ||
+            Math.abs(tick.position - missing.position) < 24,
+        ),
+    );
+    expect(lost.length).toBeLessThanOrEqual(1);
+  });
+
+  test("keeps ticks at least minSpacing apart", () => {
+    const heavy: Quantile = (p) => (1 - p) ** -2 - 1;
+    for (const quantile of [logistic, heavy, uniform(0, 100)]) {
+      const ticks = layoutTicks({ quantile, scale, width: 777 });
+      for (const [index, tick] of ticks.entries()) {
+        const previous = ticks[index - 1];
+        if (previous) {
+          expect(tick.position - previous.position).toBeGreaterThanOrEqual(24);
+        }
+      }
+    }
+  });
+
+  test("places a tick on a bucket edge once", () => {
+    // 24-pixel buckets end on multiples of 10, so each multiple of 20 ends
+    // one bucket and starts the next, and both select it.
+    const ticks = layoutTicks({
+      quantile: uniform(0, 100),
+      scale,
+      width: 240,
+      minSpacing: 24.5,
+    });
+    expect(ticks.map(({ value }) => value)).toEqual([0, 20, 40, 60, 80, 100]);
+    expect(ticks.map(({ position }) => position)).toEqual([
+      0, 48, 96, 144, 192, 240,
+    ]);
   });
 
   test("keeps at most one tick per bucket, each with room", () => {
