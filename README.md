@@ -109,12 +109,46 @@ q-bar {
 }
 ```
 
+### Slider
+
+`<q-slider>` is a `<q-bar>` with a thumb: its position is a probability and
+its value is the quantile there, so any distribution or monotone mapping
+becomes a non-linear slider with density-aware ticks.
+
+```ts
+import { decimalTicks } from "qbar";
+import { defineQSlider } from "qbar/element";
+
+defineQSlider();
+
+const slider = document.querySelector("q-slider")!;
+slider.quantile = (p) => 0.1 * 1000 ** p; // a log slider from 0.1 to 100
+slider.scale = decimalTicks({ multipliers: [1, 2] });
+slider.value = 5;
+slider.addEventListener("input", () => console.log(slider.value, slider.label));
+```
+
+```html
+<q-slider orientation="horizontal" snap></q-slider>
+```
+
+Dragging picks the nicest value within half a pixel of the pointer, so a log
+slider lands on 0.5 or 12 rather than 11.9837. `snap` also pulls the thumb
+onto fully visible ticks, and arrow keys step between them. `label` formats
+the value at the precision the track resolves there. Like
+`<input type="range">`, it fires `input` and `change` for user interaction
+only.
+
+`<q-range>` (`defineQRange()`) is the same track with two thumbs, selecting
+`range: [low, high]`; the thumbs never pass each other. Every thumb is its
+own focusable `role="slider"`, named after the element's label.
+
 ## Development
 
 ```sh
 bun install
 bun run check # types, tests, build, formatting
-bun run demo # live demo: clock times, durations, prices, latencies
+bun run demo # dashboard at /, slider playground at /playground
 ```
 
 The package remains private while its public API is being designed. It is

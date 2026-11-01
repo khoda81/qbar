@@ -1,7 +1,14 @@
 import { describe, expect, test } from "bun:test";
 
 const definitions = new Map<string, unknown>();
-const { QBarElement, defineQBar } = await import("../src/element.ts");
+const {
+  QBarElement,
+  QRangeElement,
+  QSliderElement,
+  defineQBar,
+  defineQRange,
+  defineQSlider,
+} = await import("../src/element.ts");
 
 globalThis.customElements = {
   define(name: string, constructor: unknown) {
@@ -21,6 +28,18 @@ describe("QBarElement registration", () => {
     expect(defineQBar()).toBe(QBarElement);
     expect(defineQBar()).toBe(QBarElement);
     expect(definitions.get("q-bar")).toBe(QBarElement);
+  });
+
+  test("registers the slider beside the bar", () => {
+    expect(defineQSlider()).toBe(QSliderElement);
+    expect(definitions.get("q-slider")).toBe(QSliderElement);
+    expect(QSliderElement.observedAttributes).toContain("snap");
+    expect(QSliderElement.observedAttributes).toContain("min-spacing");
+  });
+
+  test("registers the range slider", () => {
+    expect(defineQRange()).toBe(QRangeElement);
+    expect(definitions.get("q-range")).toBe(QRangeElement);
   });
 
   test("rejects a tag name owned by another constructor", () => {

@@ -23,7 +23,7 @@
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "test": "bun test",
-    "demo": "bun ./demo/index.html",
+    "demo": "bun ./demo/index.html ./demo/playground.html",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check": "tsc && bun test && bun run build && prettier --check ."
