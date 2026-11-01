@@ -1,6 +1,7 @@
 name: Release
 
-# Publishing a GitHub release tagged vX.Y.Z publishes that version to npm.
+# Publishing a GitHub release tagged vX.Y.Z stages that version on npm; a
+# maintainer approves it with 2FA before it goes live.
 on:
   release:
     types: [published]
@@ -19,13 +20,13 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.2
-      # Trusted publishing needs the npm CLI 11.5.1 or later; bun publish
-      # cannot authenticate with OIDC.
+      # Trusted staged publishing needs the npm CLI 11.15 or later; bun
+      # publish cannot authenticate with OIDC.
       - uses: actions/setup-node@v5
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
-      - run: npm install --global npm@^11.5.1
+      - run: npm install --global npm@^11.15.0
       - run: bun install --frozen-lockfile
 
       - name: Check the tag names the package version
@@ -37,5 +38,6 @@ jobs:
           fi
 
       # prepublishOnly runs bun run check first: types, tests, build, format.
-      # npm refuses a version that is already published.
-      - run: npm publish
+      # npm refuses a version that is already published. The trusted
+      # publisher may only stage, so nothing goes live without approval.
+      - run: npm stage publish

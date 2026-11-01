@@ -175,9 +175,11 @@ The demo is deployed to GitHub Pages from `main`, and CI runs
 
 ### Releasing
 
-Publishing a GitHub release publishes the package to npm through
+Publishing a GitHub release stages the package on npm through
 [trusted publishing](https://docs.npmjs.com/trusted-publishers), with
-provenance and no stored token:
+provenance and no stored token. It goes live once a maintainer approves it
+with 2FA, in the **Staged Packages** tab on npmjs.com or with
+`npm stage approve <id>`:
 
 ```sh
 bun pm version minor --no-git-tag-version
