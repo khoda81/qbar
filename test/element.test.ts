@@ -42,6 +42,13 @@ describe("QBarElement registration", () => {
     expect(definitions.get("q-range")).toBe(QRangeElement);
   });
 
+  test("makes the tracks form controls, not the bar", () => {
+    expect(QSliderElement.formAssociated).toBe(true);
+    expect(QRangeElement.formAssociated).toBe(true);
+    expect("formAssociated" in QBarElement).toBe(false);
+    expect(QRangeElement.observedAttributes).toContain("name");
+  });
+
   test("rejects a tag name owned by another constructor", () => {
     definitions.set("other-bar", class {});
     expect(() => defineQBar("other-bar")).toThrow(

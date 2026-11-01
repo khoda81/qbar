@@ -164,6 +164,12 @@ Importing `@qbar/qbar/element` registers nothing until you call these.
   `role="slider"` elements named after the element's label. Like
   `<input type="range">`, sliders fire `input` and `change` for user
   interaction only.
+- **Forms:** sliders are form controls. With a `name`, a form submits the
+  raw value, and `<q-range>` repeats the name for both ends, like
+  `<select multiple>`: `window=24&window=64`. Reset restores `defaultValue`
+  or `defaultRange`. `disabled`, including a disabled `<fieldset>`, stops
+  interaction and submission, `required` blocks submitting an empty one, and
+  a `<label for>` names the thumbs and focuses the first.
 - **Styling:** the components inherit font and color. They expose
   `--qbar-color`, `--qbar-axis-opacity`, `--qbar-thumb-size` and
   `--qbar-thumb-border`, and the parts `axis`, `tick`, `label` and `thumb`.

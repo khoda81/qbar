@@ -285,6 +285,40 @@
         font-size: 0.75rem;
       }
 
+      .booking {
+        display: grid;
+        gap: 1rem;
+        max-width: 40rem;
+      }
+
+      .booking fieldset {
+        border: 0;
+        display: grid;
+        gap: 1rem;
+        margin: 0;
+        padding: 0;
+      }
+
+      .booking__actions {
+        align-items: center;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+      }
+
+      .booking button {
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        color: var(--text);
+        cursor: pointer;
+        padding: 0.5rem 0.9rem;
+      }
+
+      .booking .meta {
+        overflow-wrap: anywhere;
+      }
+
       .gallery {
         display: grid;
         gap: 1rem;
@@ -442,6 +476,52 @@
           </section>
         </div>
       </div>
+
+      <section class="panel" aria-labelledby="form-title">
+        <h2 id="form-title">In a form</h2>
+        <p class="note">
+          Tracks are form controls: they submit raw values under their name,
+          reset to their defaults, and respect <code>required</code> and
+          <code>disabled</code>, here through the fieldset.
+        </p>
+        <form id="booking" class="booking">
+          <fieldset id="booking-fields">
+            <div class="field">
+              <div class="field__row">
+                <label for="booking-window">Pickup window</label>
+                <output id="booking-window-value"></output>
+              </div>
+              <q-range
+                id="booking-window"
+                name="window"
+                orientation="horizontal"
+                required
+              ></q-range>
+            </div>
+            <div class="field">
+              <div class="field__row">
+                <label for="booking-budget">Budget</label>
+                <output id="booking-budget-value"></output>
+              </div>
+              <q-slider
+                id="booking-budget"
+                name="budget"
+                orientation="horizontal"
+                snap
+              ></q-slider>
+            </div>
+          </fieldset>
+          <div class="booking__actions">
+            <button type="submit">Submit</button>
+            <button type="reset">Reset</button>
+            <label class="check">
+              <input id="booking-disabled" type="checkbox" />
+              Disable the fieldset
+            </label>
+          </div>
+          <output class="meta" id="booking-result"></output>
+        </form>
+      </section>
 
       <section class="panel" aria-labelledby="gallery-title">
         <h2 id="gallery-title">A few distributions</h2>

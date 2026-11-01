@@ -1,11 +1,13 @@
 import {
   decimalTicks,
   durationTicks,
+  formatDecimal,
   ladder,
   layoutTicks,
   locate,
   timeTicks,
   type DecimalChain,
+  type DecimalStep,
   type Quantile,
   type TickScale,
 } from "../src/index.ts";
@@ -380,6 +382,61 @@ valueInput.addEventListener("keydown", (event) => {
   valueInput.blur();
   readout();
 });
+
+// A form: the tracks submit raw values, reset to defaults, and follow the
+// fieldset's disabled state.
+const booking = element("booking", HTMLFormElement);
+const pickup = element("booking-window", QRangeElement);
+const budget = element(
+  "booking-budget",
+  QSliderElement,
+) as QSliderElement<DecimalStep>;
+const bookingResult = element("booking-result", HTMLOutputElement);
+
+pickup.quantile = (p) => now + 30 * minute + 6 * minute * Math.log(p / (1 - p));
+pickup.scale = timeTicks({ minStep: minute });
+pickup.setAttribute("min-spacing", "14");
+pickup.setAttribute("full-spacing", "40");
+pickup.defaultRange = [now + 25 * minute, now + 35 * minute];
+pickup.range = pickup.defaultRange;
+
+budget.quantile = (p) => 10 * 1000 ** p;
+budget.scale = decimalTicks({ multipliers: [1, 2] });
+budget.format = (value, step) => `$${formatDecimal(value, step)}`;
+budget.setAttribute("min-spacing", "14");
+budget.setAttribute("full-spacing", "40");
+budget.defaultValue = 500;
+budget.value = budget.defaultValue;
+
+const showBooking = () => {
+  element("booking-window-value", HTMLOutputElement).value =
+    pickup.labels?.join(" – ") ?? "none";
+  element("booking-budget-value", HTMLOutputElement).value =
+    budget.label ?? "none";
+};
+for (const control of [pickup, budget]) {
+  control.addEventListener("input", showBooking);
+}
+booking.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const data = new FormData(booking);
+  bookingResult.value = `Submitted ${new URLSearchParams(
+    data as unknown as Record<string, string>,
+  )}`;
+});
+booking.addEventListener("reset", () => {
+  bookingResult.value = "Reset to the defaults.";
+  requestAnimationFrame(showBooking);
+});
+element("booking-disabled", HTMLInputElement).addEventListener(
+  "change",
+  (event) => {
+    element("booking-fields", HTMLFieldSetElement).disabled = (
+      event.target as HTMLInputElement
+    ).checked;
+  },
+);
+requestAnimationFrame(showBooking);
 
 new ResizeObserver(() => update()).observe(slider);
 buildParameters();

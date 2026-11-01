@@ -111,7 +111,8 @@ export class QBarElement<Step = unknown> extends HTMLElementBase {
   constructor() {
     super();
 
-    const shadow = this.attachShadow({ mode: "open" });
+    // Focusing the host, as a <label> click does, reaches its first thumb.
+    const shadow = this.attachShadow({ mode: "open", delegatesFocus: true });
     const style = document.createElement("style");
     style.textContent = styles;
 
@@ -404,6 +405,11 @@ const trackStyles = `
   [part~="thumb"][hidden] {
     display: none;
   }
+
+  :host(:disabled) {
+    cursor: default;
+    opacity: 0.5;
+  }
 `;
 
 /**
@@ -421,16 +427,30 @@ const trackStyles = `
  * Like `<input type="range">` it fires `input` while values change through
  * interaction and `change` when the interaction ends; setting values fires
  * neither.
+ *
+ * It is a form control. With a `name`, a form submits each value under it,
+ * as raw numbers rather than labels; a range repeats the name, like
+ * `<select multiple>`. Reset restores the defaults; `disabled` (or a
+ * disabled fieldset) stops interaction and submission; `required` blocks
+ * submitting without values; a `<label for>` names and focuses the thumbs.
  */
 export abstract class QTrackElement<Step = unknown> extends QBarElement<Step> {
+  static readonly formAssociated = true;
   static override readonly observedAttributes = [
     ...QBarElement.observedAttributes,
     "snap",
     "aria-label",
+    "name",
+    "required",
   ];
 
   /** Ascending; empty or one per thumb. */
   #values: readonly number[] = [];
+  /** What a form reset restores; the same shape as the values. */
+  #defaults: readonly number[] = [];
+  /** Set by the form, from the disabled attribute or a disabled fieldset. */
+  #disabled = false;
+  readonly #internals: ElementInternals;
   #ticks: readonly Tick<Step>[] = [];
   #length = 1;
   #initial: readonly number[] = [];
@@ -443,6 +463,7 @@ export abstract class QTrackElement<Step = unknown> extends QBarElement<Step> {
   constructor(names: readonly string[]) {
     super();
     this.#names = names;
+    this.#internals = this.attachInternals();
 
     const style = document.createElement("style");
     style.textContent = trackStyles;
@@ -458,7 +479,7 @@ export abstract class QTrackElement<Step = unknown> extends QBarElement<Step> {
     this.shadowRoot!.append(style, ...this.#thumbs);
 
     this.addEventListener("pointerdown", (event) => {
-      if (event.button !== 0 || this.quantile === undefined) return;
+      if (event.button !== 0 || this.#disabled || !this.quantile) return;
       const position = this.#pointer(event);
       const index = this.#nearestThumb(position);
       if (index === undefined) return;
@@ -485,6 +506,86 @@ export abstract class QTrackElement<Step = unknown> extends QBarElement<Step> {
   }
 
   protected set thumbValues(values: readonly number[]) {
+    this.#values = this.#checked(values);
+    this.#syncForm();
+    this.#draw();
+  }
+
+  protected get defaultThumbValues(): readonly number[] {
+    return this.#defaults;
+  }
+
+  protected set defaultThumbValues(values: readonly number[]) {
+    this.#defaults = this.#checked(values);
+  }
+
+  /** The submission name; values are submitted only when it is set. */
+  get name(): string {
+    return this.getAttribute("name") ?? "";
+  }
+
+  set name(name: string) {
+    this.setAttribute("name", name);
+  }
+
+  get disabled(): boolean {
+    return this.hasAttribute("disabled");
+  }
+
+  set disabled(disabled: boolean) {
+    this.toggleAttribute("disabled", disabled);
+  }
+
+  get required(): boolean {
+    return this.hasAttribute("required");
+  }
+
+  set required(required: boolean) {
+    this.toggleAttribute("required", required);
+  }
+
+  get form(): HTMLFormElement | null {
+    return this.#internals.form;
+  }
+
+  get validity(): ValidityState {
+    return this.#internals.validity;
+  }
+
+  get validationMessage(): string {
+    return this.#internals.validationMessage;
+  }
+
+  checkValidity(): boolean {
+    return this.#internals.checkValidity();
+  }
+
+  reportValidity(): boolean {
+    return this.#internals.reportValidity();
+  }
+
+  formResetCallback(): void {
+    this.thumbValues = this.#defaults;
+  }
+
+  formDisabledCallback(disabled: boolean): void {
+    this.#disabled = disabled;
+    for (const thumb of this.#thumbs) thumb.tabIndex = disabled ? -1 : 0;
+    this.#draw();
+  }
+
+  /** Restores what #syncForm saved, as on navigating back to the page. */
+  formStateRestoreCallback(state: string | File | FormData | null): void {
+    if (typeof state !== "string") return;
+    this.thumbValues = state === "" ? [] : state.split(" ").map(Number);
+  }
+
+  override attributeChangedCallback(): void {
+    super.attributeChangedCallback();
+    this.#syncForm();
+  }
+
+  #checked(values: readonly number[]): readonly number[] {
     if (values.length !== 0 && values.length !== this.#thumbs.length) {
       throw new RangeError(
         `expected ${this.#thumbs.length} values; got ${values.length}`,
@@ -496,8 +597,26 @@ export abstract class QTrackElement<Step = unknown> extends QBarElement<Step> {
         throw new RangeError(`slider values must ascend; got ${values}`);
       }
     }
-    this.#values = values;
-    this.#draw();
+    return values;
+  }
+
+  /** The form value and validity follow the values, name and required. */
+  #syncForm(): void {
+    const values = this.#values;
+    const name = this.getAttribute("name");
+    let data: FormData | null = null;
+    if (name !== null && values.length !== 0) {
+      data = new FormData();
+      for (const value of values) data.append(name, String(value));
+    }
+    this.#internals.setFormValue(data, values.join(" "));
+
+    const missing = this.hasAttribute("required") && values.length === 0;
+    this.#internals.setValidity(
+      missing ? { valueMissing: true } : {},
+      missing ? "Select a value." : "",
+      this.#thumbs[0],
+    );
   }
 
   /** A value formatted at the precision the track resolves where it sits. */
@@ -620,6 +739,7 @@ export abstract class QTrackElement<Step = unknown> extends QBarElement<Step> {
   }
 
   #key(index: number, event: KeyboardEvent): void {
+    if (this.#disabled) return;
     const value = this.#values[index];
     const length = this.#length;
     const position = value === undefined ? 0 : this.#position(value);
@@ -664,9 +784,11 @@ export abstract class QTrackElement<Step = unknown> extends QBarElement<Step> {
   #name(): string {
     const label = this.getAttribute("aria-label");
     if (label !== null) return label;
-    return (this.getAttribute("aria-labelledby") ?? "")
+    const labelledBy = (this.getAttribute("aria-labelledby") ?? "")
       .split(/\s+/)
-      .map((id) => document.getElementById(id)?.textContent?.trim() ?? "")
+      .map((id) => document.getElementById(id));
+    return [...labelledBy, ...this.#internals.labels]
+      .map((element) => element?.textContent?.trim() ?? "")
       .filter(Boolean)
       .join(" ");
   }
@@ -686,6 +808,7 @@ export abstract class QTrackElement<Step = unknown> extends QBarElement<Step> {
       thumb.style.top = vertical ? `calc(100% - ${offset})` : "0.5px";
       setAttributes(thumb, {
         "aria-label": [name, this.#names[index]].filter(Boolean).join(" "),
+        "aria-disabled": String(this.#disabled),
         "aria-orientation": this.orientation,
         "aria-valuemin": 0,
         "aria-valuemax": 100,
@@ -711,6 +834,15 @@ export class QSliderElement<Step = unknown> extends QTrackElement<Step> {
     this.thumbValues = value === undefined ? [] : [value];
   }
 
+  /** The value a form reset restores. */
+  get defaultValue(): number | undefined {
+    return this.defaultThumbValues[0];
+  }
+
+  set defaultValue(value: number | undefined) {
+    this.defaultThumbValues = value === undefined ? [] : [value];
+  }
+
   /** The value formatted at the precision the track resolves there. */
   get label(): string | undefined {
     const value = this.value;
@@ -732,6 +864,16 @@ export class QRangeElement<Step = unknown> extends QTrackElement<Step> {
 
   set range(range: readonly [number, number] | undefined) {
     this.thumbValues = range ?? [];
+  }
+
+  /** The range a form reset restores. */
+  get defaultRange(): readonly [number, number] | undefined {
+    const [low, high] = this.defaultThumbValues;
+    return low === undefined || high === undefined ? undefined : [low, high];
+  }
+
+  set defaultRange(range: readonly [number, number] | undefined) {
+    this.defaultThumbValues = range ?? [];
   }
 
   /** Both values formatted at the precision the track resolves there. */
