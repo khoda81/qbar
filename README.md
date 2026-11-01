@@ -2,11 +2,6 @@
 
 **qbar** is a pixel-resolution quantile rasterizer.
 
-The native [qbar-core Rust milestone](crates/qbar-core/README.md) implements exact
-decimal ticks, fixed-point probabilities, adaptive layout, and independent
-reference/benchmark tooling. The TypeScript API below is the existing browser
-implementation.
-
 For a visualization that is `W` CSS pixels long, qbar evaluates a quantile
 function at `W + 1` evenly spaced probabilities. Those boundaries define the
 value interval represented by every pixel. A configurable tick source then
