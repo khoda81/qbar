@@ -1,7 +1,7 @@
 {
   "name": "qbar",
   "version": "0.1.0",
-  "description": "A pixel-resolution quantile rasterizer",
+  "description": "Density-aware ticks for anything laid out by a quantile function",
   "type": "module",
   "private": true,
   "license": "MIT",
@@ -21,15 +21,15 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "test": "bun run build && node --test test/*.test.mjs",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "test": "bun test",
     "demo": "bun ./demo/index.html",
-    "demo:dist": "bun run build && bun ./demo/index.html",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "check": "tsc --noEmit && tsc --noEmit -p tsconfig.demo.json && bun run test && bun run format:check"
+    "check": "tsc && bun test && bun run build && prettier --check ."
   },
   "devDependencies": {
+    "@types/bun": "^1.4.4",
     "prettier": "^3.9.6",
     "typescript": "^7.0.2"
   }

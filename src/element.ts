@@ -1,9 +1,5 @@
-import { rasterizeQuantiles } from "./rasterize.js";
-import type {
-  QuantileFunction,
-  TickSource,
-  VisibilityFunction,
-} from "./types.js";
+import { layoutTicks, type Quantile, type Tick } from "./layout.js";
+import type { TickScale } from "./scale.js";
 
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 const MINIMUM_VISIBLE_OPACITY = 1 / 255;
@@ -57,16 +53,6 @@ const styles = `
 
 export type QBarOrientation = "vertical" | "horizontal";
 
-export type TickFormatter = (value: number, level: number) => string;
-
-const numberFormatter = new Intl.NumberFormat(undefined, {
-  maximumSignificantDigits: 6,
-});
-
-function defaultTickFormatter(value: number): string {
-  return numberFormatter.format(value);
-}
-
 function svgElement<K extends keyof SVGElementTagNameMap>(
   name: K,
 ): SVGElementTagNameMap[K] {
@@ -82,19 +68,39 @@ function setAttributes(
   }
 }
 
-/**
- * Framework-independent SVG renderer for a quantile raster.
- *
- * The component deliberately accepts functions and objects as properties,
- * rather than trying to serialize distributions into HTML attributes.
- */
-export class QBarElement extends HTMLElementBase {
-  static readonly observedAttributes = ["orientation"];
+function numberAttribute(
+  element: Element,
+  name: string,
+  fallback: number,
+): number {
+  const value = element.getAttribute(name);
+  return value === null ? fallback : Number(value);
+}
 
-  #quantile: QuantileFunction | undefined;
-  #tickSource: TickSource | undefined;
-  #visibility: VisibilityFunction | undefined;
-  #formatTick: TickFormatter = defaultTickFormatter;
+function smoothstep(edge0: number, edge1: number, value: number): number {
+  if (edge1 <= edge0) return edge0 <= value ? 1 : 0;
+  const t = Math.min(1, Math.max(0, (value - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
+}
+
+/**
+ * Framework-independent SVG renderer for density-aware ticks.
+ *
+ * Distributions and scales are properties, not attributes, because they are
+ * functions and objects. Tick opacity rises from 0 at `min-spacing` pixels of
+ * room to 1 at `full-spacing`.
+ */
+export class QBarElement<Step = unknown> extends HTMLElementBase {
+  static readonly observedAttributes = [
+    "orientation",
+    "min-spacing",
+    "full-spacing",
+  ];
+
+  #quantile: Quantile | undefined;
+  #density: ((probability: number) => number) | undefined;
+  #scale: TickScale<Step> | undefined;
+  #format: ((value: number, step: Step) => string) | undefined;
   #resizeObserver: ResizeObserver | undefined;
   #frame: number | undefined;
   #generatedAriaLabel: string | undefined;
@@ -122,39 +128,41 @@ export class QBarElement extends HTMLElementBase {
     shadow.append(style, this.#svg);
   }
 
-  get quantile(): QuantileFunction | undefined {
+  get quantile(): Quantile | undefined {
     return this.#quantile;
   }
 
-  set quantile(value: QuantileFunction | undefined) {
+  set quantile(value: Quantile | undefined) {
     this.#quantile = value;
     this.refresh();
   }
 
-  get tickSource(): TickSource | undefined {
-    return this.#tickSource;
+  /** Optional probability density at Q(p); see LayoutOptions.density. */
+  get density(): ((probability: number) => number) | undefined {
+    return this.#density;
   }
 
-  set tickSource(value: TickSource | undefined) {
-    this.#tickSource = value;
+  set density(value: ((probability: number) => number) | undefined) {
+    this.#density = value;
     this.refresh();
   }
 
-  get visibility(): VisibilityFunction | undefined {
-    return this.#visibility;
+  get scale(): TickScale<Step> | undefined {
+    return this.#scale;
   }
 
-  set visibility(value: VisibilityFunction | undefined) {
-    this.#visibility = value;
+  set scale(value: TickScale<Step> | undefined) {
+    this.#scale = value;
     this.refresh();
   }
 
-  get formatTick(): TickFormatter {
-    return this.#formatTick;
+  /** Overrides the scale's own label format. */
+  get format(): ((value: number, step: Step) => string) | undefined {
+    return this.#format;
   }
 
-  set formatTick(value: TickFormatter) {
-    this.#formatTick = value;
+  set format(value: ((value: number, step: Step) => string) | undefined) {
+    this.#format = value;
     this.refresh();
   }
 
@@ -230,31 +238,43 @@ export class QBarElement extends HTMLElementBase {
     this.#renderAxis(length, vertical);
     this.#ticks.replaceChildren();
 
-    if (!this.#quantile || !this.#tickSource) return;
+    const quantile = this.#quantile;
+    const scale = this.#scale;
+    if (quantile === undefined || scale === undefined) return;
 
-    const rasterOptions = {
+    const minSpacing = numberAttribute(this, "min-spacing", 24);
+    const fullSpacing = numberAttribute(this, "full-spacing", 64);
+    const format =
+      this.#format ??
+      ((value: number, step: Step) => scale.format(value, step));
+    const ticks = layoutTicks({
+      quantile,
+      scale,
       width: length,
-      quantile: this.#quantile,
-      ticks: this.#tickSource,
-      ...(this.#visibility ? { visibility: this.#visibility } : {}),
-    };
-    const raster = rasterizeQuantiles(rasterOptions);
+      minSpacing,
+      ...(this.#density === undefined ? {} : { density: this.#density }),
+    });
     const fragment = document.createDocumentFragment();
+    // The step of the tick nearest the middle gives the median's precision.
+    let middle: Tick<Step> | undefined;
 
-    for (let index = 0; index < length; index += 1) {
-      const value = raster.values[index]!;
-      const opacity = raster.visibility[index]!;
-
-      if (!Number.isFinite(opacity) || opacity < MINIMUM_VISIBLE_OPACITY) {
-        continue;
+    for (const tick of ticks) {
+      const offset = Math.abs(tick.position - length / 2);
+      if (
+        middle === undefined ||
+        offset < Math.abs(middle.position - length / 2)
+      ) {
+        middle = tick;
       }
 
-      const level = raster.levels[index]!;
-      const position = vertical ? length - index - 0.5 : index + 0.5;
+      const opacity = smoothstep(minSpacing, fullSpacing, tick.spacing);
+      if (opacity < MINIMUM_VISIBLE_OPACITY) continue;
+
+      const label = format(tick.value, tick.step);
       fragment.append(
         vertical
-          ? this.#verticalTick(position, value, level, opacity)
-          : this.#horizontalTick(position, value, level, opacity),
+          ? this.#verticalTick(length - tick.position, label, opacity)
+          : this.#horizontalTick(tick.position, label, opacity),
       );
     }
 
@@ -264,12 +284,12 @@ export class QBarElement extends HTMLElementBase {
     const ownsAriaLabel =
       currentAriaLabel === null ||
       currentAriaLabel === this.#generatedAriaLabel;
-    const median = this.#quantile(0.5);
+    const median = quantile(0.5);
 
-    if (ownsAriaLabel && Number.isFinite(median)) {
-      this.#generatedAriaLabel = `Distribution with median ${this.#formatTick(
+    if (ownsAriaLabel && Number.isFinite(median) && middle !== undefined) {
+      this.#generatedAriaLabel = `Distribution with median ${format(
         median,
-        Number.NaN,
+        middle.step,
       )}`;
       this.setAttribute("aria-label", this.#generatedAriaLabel);
     }
@@ -293,12 +313,7 @@ export class QBarElement extends HTMLElementBase {
     }
   }
 
-  #verticalTick(
-    position: number,
-    value: number,
-    level: number,
-    opacity: number,
-  ): SVGGElement {
+  #verticalTick(position: number, text: string, opacity: number): SVGGElement {
     const group = svgElement("g");
     group.setAttribute("opacity", String(opacity));
 
@@ -319,7 +334,7 @@ export class QBarElement extends HTMLElementBase {
       "dominant-baseline": "middle",
       "text-anchor": "start",
     });
-    label.textContent = this.#formatTick(value, level);
+    label.textContent = text;
 
     group.append(line, label);
     return group;
@@ -327,8 +342,7 @@ export class QBarElement extends HTMLElementBase {
 
   #horizontalTick(
     position: number,
-    value: number,
-    level: number,
+    text: string,
     opacity: number,
   ): SVGGElement {
     const group = svgElement("g");
@@ -350,7 +364,7 @@ export class QBarElement extends HTMLElementBase {
       "dominant-baseline": "middle",
       "text-anchor": "start",
     });
-    label.textContent = this.#formatTick(value, level);
+    label.textContent = text;
 
     group.append(line, label);
     return group;

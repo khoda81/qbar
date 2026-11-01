@@ -1,4 +1,4 @@
-import { calendarTicks, decimalTicks, smoothVisibility } from "../src/index.ts";
+import { decimalTicks, durationTicks, timeTicks } from "../src/index.ts";
 import { defineQBar, QBarElement } from "../src/element.ts";
 
 defineQBar();
@@ -8,21 +8,12 @@ const baseTime = Date.now();
 const connectionDeparture = baseTime + 13.5 * minute;
 const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-const numberTicks = decimalTicks({ multipliers: [1, 2, 5] });
-const clockTicks = calendarTicks({
-  levels: [
-    { unit: "hour" },
-    { unit: "minute", step: 15 },
-    { unit: "minute", step: 5 },
-    { unit: "minute" },
-  ],
-});
+const clockTicks = timeTicks({ minStep: minute });
+const centTicks = decimalTicks({ minStep: 0.01 });
+const secondTicks = durationTicks({ minStep: 1_000 });
+const minuteTicks = durationTicks({ minStep: minute });
+const wholeTicks = decimalTicks({ minStep: 1 });
 
-const timeFormatter = new Intl.DateTimeFormat(undefined, {
-  hour: "2-digit",
-  minute: "2-digit",
-  second: "2-digit",
-});
 const shortTimeFormatter = new Intl.DateTimeFormat(undefined, {
   hour: "2-digit",
   minute: "2-digit",
@@ -130,7 +121,7 @@ const bars = {
   recovery: bar("recovery-bar"),
 };
 
-bars.connection.tickSource = clockTicks;
+bars.connection.scale = clockTicks;
 bars.connection.quantile = (probability) =>
   logisticQuantile(
     probability,
@@ -138,31 +129,29 @@ bars.connection.quantile = (probability) =>
     models.connection.scale,
   );
 
-bars.connection.formatTick = (value) =>
-  shortTimeFormatter.format(new Date(value));
-
-bars.download.tickSource = numberTicks;
+// Duration scales count milliseconds; the models count seconds.
+bars.download.scale = secondTicks;
 bars.download.quantile = (probability) =>
+  1000 *
   logLogisticQuantile(
     probability,
     models.download.median,
     models.download.shape,
   );
-bars.download.formatTick = (value) => formatDuration(value);
 
-bars.market.tickSource = numberTicks;
+bars.market.scale = centTicks;
 bars.market.quantile = (probability) =>
   logisticQuantile(probability, models.market.median, models.market.scale);
-bars.market.formatTick = (value) => currencyFormatter.format(value);
+bars.market.format = (value) => currencyFormatter.format(value);
 
-bars.recovery.tickSource = numberTicks;
+bars.recovery.scale = minuteTicks;
 bars.recovery.quantile = (probability) =>
+  1000 *
   logLogisticQuantile(
     probability,
     models.recovery.median,
     models.recovery.shape,
   );
-bars.recovery.formatTick = (value) => formatDuration(value, true);
 
 interface ServiceDefinition {
   name: string;
@@ -229,10 +218,10 @@ const services: Service[] = serviceDefinitions.map((definition, index) => {
 
   const serviceBar = bar(`service-bar-${index}`);
   const model = { median: definition.median, shape: 5 };
-  serviceBar.tickSource = numberTicks;
+  serviceBar.scale = wholeTicks;
   serviceBar.quantile = (probability) =>
     logLogisticQuantile(probability, model.median, model.shape);
-  serviceBar.formatTick = (value) => `${Math.round(value)}ms`;
+  serviceBar.format = (value) => `${Math.round(value)}ms`;
 
   return {
     ...definition,
@@ -276,7 +265,6 @@ uncertaintyInput.addEventListener("input", () => {
   uncertaintyOutput.value = `${uncertainty.toFixed(2)}×`;
 });
 
-console.debug(bars.connection.quantile)
 function updateConnection(time: number): void {
   const cycle = (time % 40) / 40;
   const journeyProgress = cycle * 8;
@@ -332,8 +320,8 @@ function updateDownload(time: number): void {
     6.5 / (uncertainty * (1 + disruption * 1.8)),
   );
 
-  const lower = bars.download.quantile!(0.1);
-  const upper = bars.download.quantile!(0.9);
+  const lower = bars.download.quantile!(0.1) / 1000;
+  const upper = bars.download.quantile!(0.9) / 1000;
   const underMinute =
     1 / (1 + (models.download.median / 60) ** models.download.shape);
 
@@ -395,8 +383,8 @@ function updateRecovery(time: number): void {
     4.2 / (uncertainty * (1 + disruption * 1.2)),
   );
 
-  const lower = bars.recovery.quantile!(0.1);
-  const upper = bars.recovery.quantile!(0.9);
+  const lower = bars.recovery.quantile!(0.1) / 1000;
+  const upper = bars.recovery.quantile!(0.9) / 1000;
   const p90 = upper;
   const within30 =
     1 / (1 + (models.recovery.median / (30 * 60)) ** models.recovery.shape);
