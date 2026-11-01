@@ -40,6 +40,10 @@ export interface Tick<Step> {
  * Places the coarsest tick of each floor(minSpacing)-pixel bucket and keeps it
  * if its local spacing is at least minSpacing.
  *
+ * Pixel i owns the values (Q(i/W), Q((i+1)/W)], except the first, which is
+ * closed: the pixels partition [Q(0), Q(1)], so both ends of a bounded bar
+ * can be ticks.
+ *
  * The quantile is evaluated at the width / minSpacing + 1 bucket edges, then
  * bisected down to the pixel holding each bucket's candidate, at most
  * log2(minSpacing) more calls per bucket. Assuming Q is close to linear
@@ -57,6 +61,7 @@ export function layoutTicks<Step>(options: LayoutOptions<Step>): Tick<Step>[] {
   }
 
   const sample = sampler(quantile, width);
+  const first = sample(0);
 
   /** The tick of the bucket between boundaries start and end, if visible. */
   const place = (
@@ -74,30 +79,38 @@ export function layoutTicks<Step>(options: LayoutOptions<Step>): Tick<Step>[] {
     );
     if (!(loValue < hiValue)) return undefined;
 
-    const selection = scale.select(loValue, hiValue);
+    // Buckets starting at the value Q(0), at boundary 0 or on a plateau
+    // from it, are closed below. Scales take (lower, upper], and the floats
+    // in (nextDown(a), b] are exactly those in [a, b].
+    const atStart = loValue === first;
+    const lower = atStart ? nextDown(loValue) : loValue;
+    const selection = scale.select(lower, hiValue);
     if (selection === undefined) return undefined;
     const { value, step, size } = selection;
-    if (!(loValue < value && value <= hiValue)) {
+    if (!(lower < value && value <= hiValue)) {
       throw new RangeError(
-        `scale selected ${value} outside (${loValue}, ${hiValue}]`,
+        `scale selected ${value} outside (${lower}, ${hiValue}]`,
       );
     }
     // Two ticks of the coarsest step in one bucket are closer than
     // minSpacing to each other: crowded, without locating either.
-    if (loValue < value - size) return undefined;
+    if (lower < value - size) return undefined;
 
-    const [pixel, lower, , upper] = bisect(
+    // A tick at Q(0) sits at 0, where its plateau starts, and takes its
+    // density from the first pixel rising above it.
+    const onStart = value === first;
+    const [pixel, from, , to] = bisect(
       sample,
       lo,
       loValue,
       hi,
       hiValue,
-      (sampled) => value <= sampled,
+      onStart ? (sampled) => value < sampled : (sampled) => value <= sampled,
     );
-    const position = pixel + (value - lower) / (upper - lower);
+    const position = onStart ? 0 : pixel + (value - from) / (to - from);
     const spacing =
       density === undefined
-        ? size / (upper - lower)
+        ? size / (to - from)
         : size * width * checkDensity(density(position / width));
     return minSpacing <= spacing
       ? { value, step, position, spacing }
@@ -107,7 +120,7 @@ export function layoutTicks<Step>(options: LayoutOptions<Step>): Tick<Step>[] {
   const bucket = Math.floor(minSpacing);
   const ticks: Tick<Step>[] = [];
   let start = 0;
-  let startValue = sample(0);
+  let startValue = first;
   while (start < width) {
     const end = Math.min(start + bucket, width);
     const endValue = sample(end);
@@ -229,6 +242,15 @@ function finitePart(
     );
   }
   return [lo, loValue, hi, hiValue];
+}
+
+/** The largest float below x. */
+function nextDown(x: number): number {
+  if (x === 0) return -Number.MIN_VALUE;
+  const view = new DataView(new ArrayBuffer(8));
+  view.setFloat64(0, x);
+  view.setBigInt64(0, view.getBigInt64(0) + (0 < x ? -1n : 1n));
+  return view.getFloat64(0);
 }
 
 function checkDensity(value: number): number {

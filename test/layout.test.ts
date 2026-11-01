@@ -14,7 +14,20 @@ const uniform =
   (p) =>
     lower + p * (upper - lower);
 
-/** Every pixel picks its coarsest tick; the definition buckets approximate. */
+/** The largest float below x: (nextDown(a), b] holds the same floats as [a, b]. */
+function nextDown(x: number): number {
+  if (x === 0) return -Number.MIN_VALUE;
+  const view = new DataView(new ArrayBuffer(8));
+  view.setFloat64(0, x);
+  view.setBigInt64(0, view.getBigInt64(0) + (0 < x ? -1n : 1n));
+  return view.getFloat64(0);
+}
+
+/**
+ * Every pixel picks its coarsest tick; the definition buckets approximate.
+ * Pixels own (Q(i/W), Q((i+1)/W)], except that a pixel starting at the value
+ * Q(0) is closed below.
+ */
 function perPixel<Step>(
   quantile: Quantile,
   scale: TickScale<Step>,
@@ -26,7 +39,10 @@ function perPixel<Step>(
     const lower = quantile(pixel / width);
     const upper = quantile((pixel + 1) / width);
     if (!(-Infinity < lower && lower < upper && upper < Infinity)) continue;
-    const selection = scale.select(lower, upper);
+    const selection = scale.select(
+      lower === quantile(0) ? nextDown(lower) : lower,
+      upper,
+    );
     if (selection === undefined) continue;
     const spacing = selection.size / (upper - lower);
     if (minSpacing <= spacing) {
@@ -168,6 +184,44 @@ describe("layoutTicks", () => {
     expect(() =>
       layoutTicks({ quantile: logistic, scale: liar, width: 10 }),
     ).toThrow(/outside/);
+  });
+});
+
+describe("the bar's ends", () => {
+  const scale = decimalTicks();
+
+  test("a nice Q(0) is a tick at position 0", () => {
+    const [first] = layoutTicks({
+      quantile: uniform(0, 40),
+      scale,
+      width: 400,
+    });
+    expect(first).toMatchObject({ value: 0, position: 0 });
+
+    const pareto: Quantile = (p) => 5 * (1 - p) ** (-1 / 1.5);
+    const [minimum] = layoutTicks({ quantile: pareto, scale, width: 400 });
+    expect(minimum).toMatchObject({ value: 5, position: 0 });
+  });
+
+  test("Q(1) is a tick at position width", () => {
+    const ticks = layoutTicks({ quantile: uniform(0, 40), scale, width: 400 });
+    expect(ticks.at(-1)).toMatchObject({ value: 40, position: 400 });
+  });
+
+  test("a plateau at the start puts its tick at 0 with finite room", () => {
+    const flat: Quantile = (p) => (p <= 0.2 ? 10 : 10 + 100 * (p - 0.2));
+    const [first] = layoutTicks({ quantile: flat, scale, width: 500 });
+    expect(first).toMatchObject({ value: 10, position: 0 });
+    expect(first!.spacing).toBeLessThan(Infinity);
+  });
+
+  test("a Q(0) that is no tick adds none", () => {
+    const ticks = layoutTicks({
+      quantile: uniform(0.37, 40.37),
+      scale,
+      width: 400,
+    });
+    expect(ticks[0]!.value).toBe(5);
   });
 });
 
