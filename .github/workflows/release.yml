@@ -1,0 +1,48 @@
+name: Release
+
+# Publishing a GitHub release tagged vX.Y.Z publishes that version to npm.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  # npm trusted publishing: an OIDC token instead of a stored npm token. It
+  # also attaches a provenance attestation linking the package to this run.
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      # Trusted publishing needs the npm CLI 11.5.1 or later; bun publish
+      # cannot authenticate with OIDC.
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - run: npm install --global npm@^11.5.1
+      - run: bun install --frozen-lockfile
+
+      - name: Check the tag names the package version
+        run: |
+          name=$(jq -r .name package.json)
+          version=$(jq -r .version package.json)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Release tag $GITHUB_REF_NAME does not match package.json version $version"
+            exit 1
+          fi
+          echo "PACKAGE=$name@$version" >> "$GITHUB_ENV"
+
+      # prepublishOnly runs bun run check first: types, tests, build, format.
+      - name: Publish
+        run: |
+          if npm view "$PACKAGE" version > /dev/null 2>&1; then
+            echo "::notice::$PACKAGE is already on npm; nothing to publish"
+          else
+            npm publish
+          fi

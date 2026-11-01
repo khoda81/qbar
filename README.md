@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/khoda81/qbar/actions/workflows/ci.yml/badge.svg)](https://github.com/khoda81/qbar/actions/workflows/ci.yml)
 [![Demo](https://img.shields.io/badge/demo-live-76d7ff)](https://khoda81.github.io/qbar/playground)
+[![npm](https://img.shields.io/npm/v/@qbar/qbar)](https://www.npmjs.com/package/@qbar/qbar)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 **Density-aware ticks for anything laid out by a quantile function.**
@@ -14,19 +15,23 @@ and "minor" ticks, only a spectrum of steps and how much room each tick has.
 The same idea gives you uncertainty bars for ETAs and forecasts, log and other
 non-linear sliders, range sliders, and axes for any monotone mapping.
 
-[![The qbar playground: a bimodal distribution on a non-linear slider, with every control itself a qbar slider](docs/playground.webp)](https://khoda81.github.io/qbar/playground)
+[![The qbar playground: a bimodal distribution on a non-linear slider, with every control itself a qbar slider](https://raw.githubusercontent.com/khoda81/qbar/main/docs/playground.webp)](https://khoda81.github.io/qbar/playground)
 
 **[Try the playground →](https://khoda81.github.io/qbar/playground)** ·
 [Live dashboard](https://khoda81.github.io/qbar/)
 
 ## Quick start
 
+```sh
+bun add @qbar/qbar # or: npm install @qbar/qbar
+```
+
 `<q-bar>`, `<q-slider>` and `<q-range>` are framework-independent web
 components. Give them a quantile function and a scale:
 
 ```ts
-import { decimalTicks, durationTicks } from "qbar";
-import { defineQBar, defineQSlider } from "qbar/element";
+import { decimalTicks, durationTicks } from "@qbar/qbar";
+import { defineQBar, defineQSlider } from "@qbar/qbar/element";
 
 defineQBar();
 defineQSlider();
@@ -44,20 +49,20 @@ gain.value = 5;
 gain.addEventListener("input", () => console.log(gain.value, gain.label));
 ```
 
+<!-- prettier-ignore -->
 ```html
-<q-bar></q-bar> <q-slider orientation="horizontal" snap></q-slider>
+<q-bar></q-bar>
+<q-slider orientation="horizontal" snap></q-slider>
 ```
 
-qbar is not on npm yet while its API settles. To use it now, clone the
-repository and run `bun install && bun run build`; the package's `exports`
-point at `dist/`.
+qbar is pre-1.0, so minor versions may still change the API.
 
 ## The core
 
 Everything above is built on one function:
 
 ```ts
-import { decimalTicks, layoutTicks } from "qbar";
+import { decimalTicks, layoutTicks } from "@qbar/qbar";
 
 const ticks = layoutTicks({
   quantile: (p) => model.quantile(p), // [0, 1] → value, nondecreasing
@@ -132,7 +137,7 @@ as powers of two for byte sizes. Each rung is an integer ratio
 
 ## Components
 
-[![A live dashboard: an arrival time, a download ETA and a price quote, each a qbar](docs/dashboard.webp)](https://khoda81.github.io/qbar/)
+[![A live dashboard: an arrival time, a download ETA and a price quote, each a qbar](https://raw.githubusercontent.com/khoda81/qbar/main/docs/dashboard.webp)](https://khoda81.github.io/qbar/)
 
 | Element      | Registration      | Value                          |
 | ------------ | ----------------- | ------------------------------ |
@@ -140,7 +145,7 @@ as powers of two for byte sizes. Each rung is an integer ratio
 | `<q-slider>` | `defineQSlider()` | `value`, `label`               |
 | `<q-range>`  | `defineQRange()`  | `range: [low, high]`, `labels` |
 
-Importing `qbar/element` registers nothing until you call these.
+Importing `@qbar/qbar/element` registers nothing until you call these.
 
 - **Properties:** `quantile`, `scale`, optional `density`, and `format` to
   override the scale's labels. Call `refresh()` after mutating a model in
@@ -167,6 +172,22 @@ bun run check # types, tests, build, formatting
 
 The demo is deployed to GitHub Pages from `main`, and CI runs
 `bun run check` on every push and pull request.
+
+### Releasing
+
+Publishing a GitHub release publishes the package to npm through
+[trusted publishing](https://docs.npmjs.com/trusted-publishers), with
+provenance and no stored token:
+
+```sh
+bun pm version minor --no-git-tag-version
+jj commit -m "Release 0.2.0"
+jj bookmark set main -r @-
+jj git push --bookmark main
+gh release create v0.2.0 --target main --generate-notes
+```
+
+The workflow refuses a tag that does not match `package.json`.
 
 ## License
 

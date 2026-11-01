@@ -1,5 +1,5 @@
 {
-  "name": "qbar",
+  "name": "@qbar/qbar",
   "version": "0.1.0",
   "description": "Density-aware ticks for anything laid out by a quantile function: distributions, ETAs, non-linear sliders.",
   "keywords": [
@@ -22,7 +22,6 @@
     "url": "https://github.com/khoda81/qbar/issues"
   },
   "type": "module",
-  "private": true,
   "license": "MIT",
   "sideEffects": false,
   "exports": {
@@ -37,8 +36,12 @@
   },
   "files": [
     "dist",
+    "src",
     "README.md"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "test": "bun test",
@@ -46,7 +49,8 @@
     "demo:build": "rm -rf site && bun build ./demo/index.html ./demo/playground.html --outdir site --minify",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "check": "tsc && bun test && bun run build && prettier --check ."
+    "check": "tsc && bun test && bun run build && prettier --check .",
+    "prepublishOnly": "bun run check"
   },
   "devDependencies": {
     "@types/bun": "^1.4.4",
