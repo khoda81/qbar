@@ -1,16 +1,60 @@
 # qbar
 
-**qbar** places density-aware ticks on anything laid out by a quantile
-function: ETA and latency distributions, price forecasts, non-linear sliders,
-any one-dimensional mapping from position to value.
+[![CI](https://github.com/khoda81/qbar/actions/workflows/ci.yml/badge.svg)](https://github.com/khoda81/qbar/actions/workflows/ci.yml)
+[![Demo](https://img.shields.io/badge/demo-live-76d7ff)](https://khoda81.github.io/qbar/playground)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-There are no "major" and "minor" ticks. Every tick has a step from a nested
-spectrum (…, 10, 5, 1, 0.5, … or year, month, day, hour, …) and a **spacing**:
-the pixels between it and its same-step neighbours at the local density. Wide
-spacing means a stable, prominent tick; a renderer fades ticks as their
-spacing shrinks.
+**Density-aware ticks for anything laid out by a quantile function.**
 
-## Layout
+A qbar maps position to probability and lets the values become the ticks.
+Where a distribution is concentrated, values spread out and fine steps appear;
+in the tails they compress and only coarse steps survive. There are no "major"
+and "minor" ticks, only a spectrum of steps and how much room each tick has.
+
+The same idea gives you uncertainty bars for ETAs and forecasts, log and other
+non-linear sliders, range sliders, and axes for any monotone mapping.
+
+[![The qbar playground: a bimodal distribution on a non-linear slider, with every control itself a qbar slider](docs/playground.webp)](https://khoda81.github.io/qbar/playground)
+
+**[Try the playground →](https://khoda81.github.io/qbar/playground)** ·
+[Live dashboard](https://khoda81.github.io/qbar/)
+
+## Quick start
+
+`<q-bar>`, `<q-slider>` and `<q-range>` are framework-independent web
+components. Give them a quantile function and a scale:
+
+```ts
+import { decimalTicks, durationTicks } from "qbar";
+import { defineQBar, defineQSlider } from "qbar/element";
+
+defineQBar();
+defineQSlider();
+
+// An ETA: exponential with a 4-minute mean. Durations are in milliseconds.
+const eta = document.querySelector("q-bar")!;
+eta.quantile = (p) => -240_000 * Math.log1p(-p);
+eta.scale = durationTicks();
+
+// A log slider from 0.1 to 100.
+const gain = document.querySelector("q-slider")!;
+gain.quantile = (p) => 0.1 * 1000 ** p;
+gain.scale = decimalTicks({ multipliers: [1, 2] });
+gain.value = 5;
+gain.addEventListener("input", () => console.log(gain.value, gain.label));
+```
+
+```html
+<q-bar></q-bar> <q-slider orientation="horizontal" snap></q-slider>
+```
+
+qbar is not on npm yet while its API settles. To use it now, clone the
+repository and run `bun install && bun run build`; the package's `exports`
+point at `dist/`.
+
+## The core
+
+Everything above is built on one function:
 
 ```ts
 import { decimalTicks, layoutTicks } from "qbar";
@@ -18,45 +62,58 @@ import { decimalTicks, layoutTicks } from "qbar";
 const ticks = layoutTicks({
   quantile: (p) => model.quantile(p), // [0, 1] → value, nondecreasing
   scale: decimalTicks(),
-  width: 400, // pixels; p sits at p × width
-  minSpacing: 24, // optional, pixels
+  width: 400, // pixels; probability p sits at p × width
+  minSpacing: 24, // optional
   density: (p) => model.pdf(model.quantile(p)), // optional
 });
 
 for (const { value, step, position, spacing } of ticks) {
-  // position: pixels from the p = 0 end; spacing ≥ minSpacing
+  // position: pixels from the p = 0 end
+  // spacing: pixels to the same-step neighbours, at least minSpacing
 }
 ```
 
-`minSpacing` divides the bar into buckets that can hold at most one tick. Each
-bucket asks the scale for its coarsest tick, bisects to the pixel holding it,
-and keeps it when `size / (Q((i+1)/W) − Q(i/W)) ≥ minSpacing`. That costs about
-`W / minSpacing` quantile calls plus `log2(minSpacing)` per bucket, rather than
-one per pixel; at 1000 pixels it is roughly 200 calls instead of 1001.
+`spacing` is the whole spectrum: a renderer can fade ticks with it, decide
+which get labels, or size them. `<q-bar>` fades each tick from transparent at
+`min-spacing` to opaque at `full-spacing`.
 
-Only the quantile is required. `density(p)`, the probability density at
-`Q(p)`, replaces the pixel estimate when you have it. Infinite quantiles at the
-ends are allowed; pixels with an infinite boundary hold no tick.
+Only the quantile is required, and it may return `±Infinity` at the ends for
+unbounded distributions. `locate(quantile, width, value)` goes the other way,
+from a value to its pixel, for markers and slider thumbs.
 
-The bucket shortcut assumes the quantile is close to linear across one bucket.
-Where density changes sharply within `minSpacing` pixels, a tick the per-pixel
-definition would keep can be dropped as crowded.
+### How it works
 
-`locate(quantile, width, value)` inverts the layout for markers and slider
-thumbs; the other direction is just `quantile(x / width)`.
+`minSpacing` splits the bar into buckets that can hold at most one tick. Each
+bucket asks the scale for its coarsest tick, then bisects down to the pixel
+that holds it. That pixel gives both the tick's position and the local density,
+`size / (Q((i+1)/W) − Q(i/W))`, or `density(p)` when you provide it.
+
+At 1000 pixels a layout makes about 200 quantile calls instead of the 1001 a
+per-pixel sweep needs, which matters when the quantile is expensive, such as a
+CDF inverted numerically. For linear quantiles the result matches the
+per-pixel definition exactly; where density changes sharply within one bucket,
+a tick can be dropped as crowded.
+
+This works because scale steps **nest**: every tick of a coarser step is also a
+tick of each finer one. A finer tick sharing a bucket with a coarser one then
+has it as a same-step neighbour less than `minSpacing` away, so it would be
+hidden anyway.
 
 ## Scales
 
 ```ts
 decimalTicks({ multipliers: [1, 5], minStep: 0.01 }); // [1], [1, 2] or [1, 5]
-durationTicks({ minStep: 1_000 }); // milliseconds: 500ms, 1s, 5s, 15s, 30s, 1m, …
+durationTicks({ minStep: 1_000 }); // ms: 500ms, 1s, 5s, 15s, 30s, 1m, 5m, …
 timeTicks({ zone: "local", minStep: 60_000 }); // Unix ms on calendar boundaries
 ```
 
-`minStep` drops steps finer than a size: cents, whole seconds, whole minutes.
-Each scale also formats its own ticks with `scale.format(value, step)`.
+`minStep` drops steps finer than a size, such as cents or whole minutes. Every
+scale formats its own ticks: `1.25`, `1h 30m`, `Mar 8`, `14:30`.
 
-A scale is two functions:
+Nesting rules out some familiar chains: 1-2-5 decimals (5 is not a multiple of 2) and weeks (they straddle months). Days step 1, 8, 15, 22, 29 within each
+month instead.
+
+A scale is two functions, so custom ones are small:
 
 ```ts
 interface TickScale<Step> {
@@ -69,87 +126,48 @@ interface TickScale<Step> {
 }
 ```
 
-Steps must **nest**: every tick of a coarser step is also a tick of each finer
-step. That is what makes one tick per bucket enough, and why 1-2-5 decimals
-and weeks are not offered: a 5 is not a multiple of 2, and weeks straddle
-months. `ladder(rungs, format)` builds a nested scale of uniform steps from
-zero, such as powers of 1024 for bytes. Each rung is an integer ratio
-`numerator / denominator`, so decimal fractions stay exact.
+`ladder(rungs, format)` builds one from uniform steps counted from zero, such
+as powers of two for byte sizes. Each rung is an integer ratio
+`numerator / denominator`, which keeps decimal fractions exact.
 
-## Web component
+## Components
 
-`qbar/element` renders ticks as SVG. It works in any framework, and it defaults
-to a vertical bar so labels stay horizontal.
+[![A live dashboard: an arrival time, a download ETA and a price quote, each a qbar](docs/dashboard.webp)](https://khoda81.github.io/qbar/)
 
-```ts
-import { durationTicks } from "qbar";
-import { defineQBar } from "qbar/element";
+| Element      | Registration      | Value                          |
+| ------------ | ----------------- | ------------------------------ |
+| `<q-bar>`    | `defineQBar()`    | none; it is an axis            |
+| `<q-slider>` | `defineQSlider()` | `value`, `label`               |
+| `<q-range>`  | `defineQRange()`  | `range: [low, high]`, `labels` |
 
-defineQBar(); // registers <q-bar>; importing alone has no side effects
+Importing `qbar/element` registers nothing until you call these.
 
-const bar = document.querySelector("q-bar")!;
-bar.quantile = (p) => model.quantile(p);
-bar.scale = durationTicks();
-bar.format = (value, step) => …; // optional; defaults to the scale's
-bar.refresh(); // after mutating a model in place
-```
-
-```html
-<q-bar min-spacing="24" full-spacing="64"></q-bar>
-<q-bar orientation="horizontal"></q-bar>
-```
-
-Tick opacity rises from 0 at `min-spacing` pixels of spacing to 1 at
-`full-spacing`. The element inherits typography and color:
-
-```css
-q-bar {
-  --qbar-color: currentColor;
-  --qbar-axis-opacity: 0.25;
-}
-```
-
-### Slider
-
-`<q-slider>` is a `<q-bar>` with a thumb: its position is a probability and
-its value is the quantile there, so any distribution or monotone mapping
-becomes a non-linear slider with density-aware ticks.
-
-```ts
-import { decimalTicks } from "qbar";
-import { defineQSlider } from "qbar/element";
-
-defineQSlider();
-
-const slider = document.querySelector("q-slider")!;
-slider.quantile = (p) => 0.1 * 1000 ** p; // a log slider from 0.1 to 100
-slider.scale = decimalTicks({ multipliers: [1, 2] });
-slider.value = 5;
-slider.addEventListener("input", () => console.log(slider.value, slider.label));
-```
-
-```html
-<q-slider orientation="horizontal" snap></q-slider>
-```
-
-Dragging picks the nicest value within half a pixel of the pointer, so a log
-slider lands on 0.5 or 12 rather than 11.9837. `snap` also pulls the thumb
-onto fully visible ticks, and arrow keys step between them. `label` formats
-the value at the precision the track resolves there. Like
-`<input type="range">`, it fires `input` and `change` for user interaction
-only.
-
-`<q-range>` (`defineQRange()`) is the same track with two thumbs, selecting
-`range: [low, high]`; the thumbs never pass each other. Every thumb is its
-own focusable `role="slider"`, named after the element's label.
+- **Properties:** `quantile`, `scale`, optional `density`, and `format` to
+  override the scale's labels. Call `refresh()` after mutating a model in
+  place.
+- **Attributes:** `orientation` (`vertical` by default, or `horizontal`),
+  `min-spacing` (24) and `full-spacing` (64); `snap` on sliders.
+- **Sliders** pick the nicest value within half a pixel of the pointer, so a
+  log slider lands on 0.5 or 12, not 11.9837. `snap` also pulls the thumb onto
+  fully visible ticks, and arrow keys step between them. Thumbs are focusable
+  `role="slider"` elements named after the element's label. Like
+  `<input type="range">`, sliders fire `input` and `change` for user
+  interaction only.
+- **Styling:** the components inherit font and color. They expose
+  `--qbar-color`, `--qbar-axis-opacity`, `--qbar-thumb-size` and
+  `--qbar-thumb-border`, and the parts `axis`, `tick`, `label` and `thumb`.
 
 ## Development
 
 ```sh
 bun install
+bun run demo # dashboard at /, playground at /playground
 bun run check # types, tests, build, formatting
-bun run demo # dashboard at /, slider playground at /playground
 ```
 
-The package remains private while its public API is being designed. It is
-licensed under the MIT License.
+The demo is deployed to GitHub Pages from `main`, and CI runs
+`bun run check` on every push and pull request.
+
+## License
+
+[MIT](LICENSE)

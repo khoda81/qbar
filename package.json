@@ -1,7 +1,26 @@
 {
   "name": "qbar",
   "version": "0.1.0",
-  "description": "Density-aware ticks for anything laid out by a quantile function",
+  "description": "Density-aware ticks for anything laid out by a quantile function: distributions, ETAs, non-linear sliders.",
+  "keywords": [
+    "ticks",
+    "axis",
+    "quantile",
+    "distribution",
+    "uncertainty",
+    "slider",
+    "range-slider",
+    "web-components",
+    "data-visualization"
+  ],
+  "homepage": "https://khoda81.github.io/qbar/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/khoda81/qbar.git"
+  },
+  "bugs": {
+    "url": "https://github.com/khoda81/qbar/issues"
+  },
   "type": "module",
   "private": true,
   "license": "MIT",
@@ -24,6 +43,7 @@
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "test": "bun test",
     "demo": "bun ./demo/index.html ./demo/playground.html",
+    "demo:build": "rm -rf site && bun build ./demo/index.html ./demo/playground.html --outdir site --minify",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check": "tsc && bun test && bun run build && prettier --check ."
