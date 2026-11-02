@@ -114,12 +114,13 @@ hidden anyway.
 
 ```ts
 decimalTicks({ multipliers: [1, 5], minStep: 0.01 }); // [1], [1, 2] or [1, 5]
-durationTicks({ minStep: 1_000 }); // ms: 500ms, 1s, 5s, 15s, 30s, 1m, 5m, …
+durationTicks({ minStep: 1_000 }); // ms: 1s, 5s, 15s, 30s, 1m, 5m, …
 timeTicks({ zone: "local", minStep: 60_000 }); // Unix ms on calendar boundaries
 ```
 
 `minStep` drops steps finer than a size, such as cents or whole minutes. Every
-scale formats its own ticks: `1.25`, `1h 30m`, `Mar 8`, `14:30`.
+scale formats its own ticks: `1.25`, `1h 30m`, `1µs 510ns`, `Mar 8`, `14:30`.
+Durations step from 10,000 days down to attoseconds.
 
 Nesting rules out some familiar chains: 1-2-5 decimals (5 is not a multiple of 2) and weeks (they straddle months). Days step 1, 8, 15, 22, 29 within each
 month instead.

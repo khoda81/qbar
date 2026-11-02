@@ -126,6 +126,30 @@ describe("durationTicks", () => {
     expect(format(0)).toBe("0");
   });
 
+  test("continues below milliseconds to attoseconds", () => {
+    const at = (lower: number, upper: number) => {
+      const selection = scale.select(lower, upper)!;
+      return [selection.step, scale.format(selection.value, selection.step)];
+    };
+    expect(at(2.9e-6, 3.1e-6)).toEqual([
+      { unit: "nanosecond", count: 1 },
+      "3ns",
+    ]);
+    expect(at(0.0015, 0.00151)).toEqual([
+      { unit: "nanosecond", count: 10 },
+      "1µs 510ns",
+    ]);
+    expect(at(1.0000005, 1.0000006)).toEqual([
+      { unit: "picosecond", count: 100 },
+      "1ms 600ps",
+    ]);
+    expect(at(-7.2e-15, -6.8e-15)).toEqual([
+      { unit: "attosecond", count: 1 },
+      "-7as",
+    ]);
+    expect(scale.select(1e-16, 2e-16)).toBeUndefined();
+  });
+
   test("omits steps below minStep", () => {
     const minutes = durationTicks({ minStep: minute });
     expect(minutes.select(1_000, 59_000)).toBeUndefined();
