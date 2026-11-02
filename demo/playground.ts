@@ -82,7 +82,7 @@ function parseDuration(text: string): number | undefined {
 
 function parseTime(text: string): number | undefined {
   const minutes = parseNumber(text);
-  if (minutes !== undefined) return now + minutes * minute;
+  if (minutes !== undefined) return origin() + minutes * minute;
   const match =
     /^(\d{1,2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?\s*([ap])?\.?m?\.?$/i.exec(
       text,
@@ -91,7 +91,7 @@ function parseTime(text: string): number | undefined {
   const [, hours, minutesText, seconds = "0", fraction = "0", half] = match;
   let hour = Number(hours);
   if (half !== undefined) hour = (hour % 12) + (/p/i.test(half) ? 12 : 0);
-  const date = new Date(now);
+  const date = new Date(origin());
   date.setHours(
     hour,
     Number(minutesText),
@@ -109,14 +109,19 @@ const UNITS: Record<
   Unit,
   {
     readonly factor: number;
-    readonly offset: number;
+    offset(): number;
     parse(text: string): number | undefined;
   }
 > = {
-  number: { factor: 1, offset: 0, parse: parseNumber },
-  duration: { factor: minute, offset: 0, parse: parseDuration },
-  time: { factor: minute, offset: now, parse: parseTime },
+  number: { factor: 1, offset: () => 0, parse: parseNumber },
+  duration: { factor: minute, offset: () => 0, parse: parseDuration },
+  time: { factor: minute, offset: () => origin(), parse: parseTime },
 };
+
+/** The now that clock times count from. */
+function origin(): number {
+  return state.now === "live" ? Date.now() : state.now;
+}
 
 const state = {
   distribution: DISTRIBUTIONS[0]!,
@@ -125,6 +130,8 @@ const state = {
   unit: "number" as Unit,
   chain: [1, 5] as DecimalChain,
   analytic: false,
+  /** Clock times count from this instant, or from the clock's moving now. */
+  now: now as number | "live",
   trackWidth: 0,
 };
 
@@ -133,6 +140,8 @@ const parametersRoot = element("parameters", HTMLDivElement);
 const unitSelect = element("unit", HTMLSelectElement);
 const chainField = element("chain-field", HTMLLabelElement);
 const chainSelect = element("chain", HTMLSelectElement);
+const liveField = element("live-field", HTMLLabelElement);
+const liveInput = element("live", HTMLInputElement);
 const spacing = element("spacing", QRangeElement);
 const analyticInput = element("analytic", HTMLInputElement);
 const snapInput = element("snap", HTMLInputElement);
@@ -144,7 +153,8 @@ const meta = element("meta", HTMLOutputElement);
 
 function quantile(): Quantile {
   const { distribution, values, unit } = state;
-  const { factor, offset } = UNITS[unit];
+  const { factor } = UNITS[unit];
+  const offset = UNITS[unit].offset();
   return (p) => offset + factor * distribution.quantile(p, values);
 }
 
@@ -214,6 +224,7 @@ function update(): void {
   element("stat-time", HTMLElement).textContent = `${elapsed.toFixed(2)} ms`;
   element("note", HTMLElement).textContent = state.distribution.note;
   chainField.hidden = state.unit !== "number";
+  liveField.hidden = state.unit !== "time";
 
   drawDensity(width);
   readout();
@@ -354,12 +365,18 @@ unitSelect.addEventListener("change", () => {
   state.unit = unitSelect.value as Unit;
   update();
   resetValue();
+  follow();
 });
 chainSelect.addEventListener("change", () => {
   state.chain = chainSelect.value
     .split(",")
     .map(Number) as unknown as DecimalChain;
   update();
+});
+liveInput.addEventListener("change", () => {
+  state.now = liveInput.checked ? "live" : Date.now();
+  update();
+  follow();
 });
 analyticInput.addEventListener("change", () => {
   state.analytic = analyticInput.checked;
@@ -437,6 +454,36 @@ element("booking-disabled", HTMLInputElement).addEventListener(
   },
 );
 requestAnimationFrame(showBooking);
+
+/**
+ * While clock times are live, each frame hands the slider the quantile for
+ * the current now. The slider lays every one out but rebuilds its ticks only
+ * when they visibly move, which the redraw count shows.
+ */
+let following = false;
+function follow(): void {
+  if (following) return;
+  const frame = () => {
+    following = state.now === "live" && state.unit === "time";
+    if (!following) return;
+    slider.quantile = quantile();
+    readout();
+    requestAnimationFrame(frame);
+  };
+  frame();
+}
+
+// Each rebuild of the slider's ticks replaces the children of its tick group.
+let redraws: number[] = [];
+new MutationObserver(() => redraws.push(performance.now())).observe(
+  slider.shadowRoot!.querySelector('[part="ticks"]')!,
+  { childList: true },
+);
+setInterval(() => {
+  const since = performance.now() - 1_000;
+  redraws = redraws.filter((time) => since < time);
+  element("stat-redraws", HTMLElement).textContent = `${redraws.length} / s`;
+}, 250);
 
 new ResizeObserver(() => update()).observe(slider);
 buildParameters();

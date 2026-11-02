@@ -2,7 +2,13 @@ import { layoutTicks, locate, type Quantile, type Tick } from "./layout.js";
 import type { Selection, TickScale } from "./scale.js";
 
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
+/** One step of 8-bit alpha: fainter ticks, and smaller fades, don't show. */
 const MINIMUM_VISIBLE_OPACITY = 1 / 255;
+/**
+ * Tick moves below this many device pixels don't show: a still frame can't
+ * resolve them, and motion built from such steps reads as continuous.
+ */
+const MINIMUM_VISIBLE_SHIFT = 1 / 4;
 const HTMLElementBase =
   typeof HTMLElement === "undefined"
     ? (class {} as unknown as typeof HTMLElement)
@@ -77,6 +83,41 @@ function numberAttribute(
   return value === null ? fallback : Number(value);
 }
 
+/** A tick as drawn; its position is in SVG pixels along the axis. */
+interface Mark {
+  readonly position: number;
+  readonly label: string;
+  readonly opacity: number;
+}
+
+interface Drawing {
+  /** Pixels along the bar. */
+  readonly length: number;
+  /** Pixels across it. */
+  readonly crossLength: number;
+  readonly vertical: boolean;
+  readonly marks: readonly Mark[];
+}
+
+/** Whether drawing b over a would show any difference. */
+function looksSame(a: Drawing, b: Drawing): boolean {
+  const shift = MINIMUM_VISIBLE_SHIFT / devicePixelRatio;
+  return (
+    a.length === b.length &&
+    a.crossLength === b.crossLength &&
+    a.vertical === b.vertical &&
+    a.marks.length === b.marks.length &&
+    a.marks.every((mark, index) => {
+      const other = b.marks[index]!;
+      return (
+        mark.label === other.label &&
+        Math.abs(mark.position - other.position) < shift &&
+        Math.abs(mark.opacity - other.opacity) < MINIMUM_VISIBLE_OPACITY
+      );
+    })
+  );
+}
+
 function smoothstep(edge0: number, edge1: number, value: number): number {
   if (edge1 <= edge0) return edge0 <= value ? 1 : 0;
   const t = Math.min(1, Math.max(0, (value - edge0) / (edge1 - edge0)));
@@ -89,6 +130,11 @@ function smoothstep(edge0: number, edge1: number, value: number): number {
  * Distributions and scales are properties, not attributes, because they are
  * functions and objects. Tick opacity rises from 0 at `min-spacing` pixels of
  * room to 1 at `full-spacing`.
+ *
+ * Every change is laid out again, but the SVG is rebuilt only when a tick
+ * would visibly move, fade or change its label. Replacing the quantile each
+ * animation frame, as times counted from a moving now need, is therefore
+ * cheap while the ticks crawl.
  */
 export class QBarElement<Step = unknown> extends HTMLElementBase {
   static readonly observedAttributes = [
@@ -104,6 +150,8 @@ export class QBarElement<Step = unknown> extends HTMLElementBase {
   #resizeObserver: ResizeObserver | undefined;
   #frame: number | undefined;
   #generatedAriaLabel: string | undefined;
+  /** What the SVG shows; undefined before the first render. */
+  #drawing: Drawing | undefined;
   readonly #svg: SVGSVGElement;
   readonly #axis: SVGLineElement;
   readonly #ticks: SVGGElement;
@@ -118,6 +166,7 @@ export class QBarElement<Step = unknown> extends HTMLElementBase {
 
     this.#svg = svgElement("svg");
     this.#svg.setAttribute("aria-hidden", "true");
+    this.#svg.setAttribute("preserveAspectRatio", "none");
 
     this.#axis = svgElement("line");
     this.#axis.setAttribute("part", "axis");
@@ -208,7 +257,7 @@ export class QBarElement<Step = unknown> extends HTMLElementBase {
   }
 
   /**
-   * Schedules a new rasterization after mutable model state changes.
+   * Schedules a new layout after mutable model state changes.
    */
   refresh(): void {
     if (!this.isConnected || this.#frame !== undefined) return;
@@ -221,27 +270,17 @@ export class QBarElement<Step = unknown> extends HTMLElementBase {
 
   #render(): void {
     const rect = this.getBoundingClientRect();
-    const orientation = this.orientation;
-    const vertical = orientation === "vertical";
+    const vertical = this.orientation === "vertical";
     const length = Math.max(1, Math.round(vertical ? rect.height : rect.width));
     const crossLength = Math.max(
       1,
       Math.round(vertical ? rect.width : rect.height),
     );
 
-    setAttributes(this.#svg, {
-      viewBox: `0 0 ${vertical ? crossLength : length} ${
-        vertical ? length : crossLength
-      }`,
-      preserveAspectRatio: "none",
-    });
-
-    this.#renderAxis(length, vertical);
-    this.#ticks.replaceChildren();
-
     const quantile = this.#quantile;
     const scale = this.#scale;
     if (quantile === undefined || scale === undefined) {
+      this.#paint({ length, crossLength, vertical, marks: [] });
       this.rendered([], length);
       return;
     }
@@ -258,21 +297,17 @@ export class QBarElement<Step = unknown> extends HTMLElementBase {
       minSpacing,
       ...(this.#density === undefined ? {} : { density: this.#density }),
     });
-    const fragment = document.createDocumentFragment();
-
+    const marks: Mark[] = [];
     for (const tick of ticks) {
       const opacity = smoothstep(minSpacing, fullSpacing, tick.spacing);
       if (opacity < MINIMUM_VISIBLE_OPACITY) continue;
-
-      const label = format(tick.value, tick.step);
-      fragment.append(
-        vertical
-          ? this.#verticalTick(length - tick.position, label, opacity)
-          : this.#horizontalTick(tick.position, label, opacity),
-      );
+      marks.push({
+        position: vertical ? length - tick.position : tick.position,
+        label: format(tick.value, tick.step),
+        opacity,
+      });
     }
-
-    this.#ticks.append(fragment);
+    this.#paint({ length, crossLength, vertical, marks });
 
     const currentAriaLabel = this.getAttribute("aria-label");
     const ownsAriaLabel =
@@ -288,13 +323,39 @@ export class QBarElement<Step = unknown> extends HTMLElementBase {
       Number.isFinite(median) &&
       middle !== undefined
     ) {
-      this.#generatedAriaLabel = `Distribution with median ${format(
-        median,
-        middle.step,
-      )}`;
-      this.setAttribute("aria-label", this.#generatedAriaLabel);
+      const label = `Distribution with median ${format(median, middle.step)}`;
+      this.#generatedAriaLabel = label;
+      if (currentAriaLabel !== label) this.setAttribute("aria-label", label);
     }
     this.rendered(ticks, length);
+  }
+
+  /**
+   * Rebuilds the SVG unless the new drawing would look the same. Comparing
+   * with what is shown, rather than with the last layout, keeps slow drift
+   * from accumulating unseen.
+   */
+  #paint(drawing: Drawing): void {
+    if (this.#drawing !== undefined && looksSame(this.#drawing, drawing)) {
+      return;
+    }
+    this.#drawing = drawing;
+
+    const { length, crossLength, vertical, marks } = drawing;
+    this.#svg.setAttribute(
+      "viewBox",
+      vertical
+        ? `0 0 ${crossLength} ${length}`
+        : `0 0 ${length} ${crossLength}`,
+    );
+    this.#renderAxis(length, vertical);
+    this.#ticks.replaceChildren(
+      ...marks.map(({ position, label, opacity }) =>
+        vertical
+          ? this.#verticalTick(position, label, opacity)
+          : this.#horizontalTick(position, label, opacity),
+      ),
+    );
   }
 
   /** Called after each layout with its ticks and the bar length in pixels. */

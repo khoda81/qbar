@@ -156,7 +156,9 @@ Importing `@qbar/qbar/element` registers nothing until you call these.
 
 - **Properties:** `quantile`, `scale`, optional `density`, and `format` to
   override the scale's labels. Call `refresh()` after mutating a model in
-  place.
+  place. Each change is laid out again, but the ticks are redrawn only when
+  one would visibly move, fade or relabel, so a quantile that follows the
+  clock can be replaced every animation frame.
 - **Attributes:** `orientation` (`vertical` by default, or `horizontal`),
   `min-spacing` (24) and `full-spacing` (64); `snap` on sliders.
 - **Sliders** pick the nicest value within half a pixel of the pointer, so a

@@ -394,6 +394,10 @@
               <option value="time">minutes from now, as a clock time</option>
             </select>
           </label>
+          <label id="live-field" class="check">
+            <input id="live" type="checkbox" />
+            Count from the moving now
+          </label>
           <label id="chain-field">
             Decimal steps
             <select id="chain">
@@ -471,6 +475,10 @@
               </div>
               <div class="stat">
                 <strong id="stat-time"></strong><span>layout time</span>
+              </div>
+              <div class="stat">
+                <strong id="stat-redraws"></strong
+                ><span>tick redraws in the last second</span>
               </div>
             </div>
           </section>
