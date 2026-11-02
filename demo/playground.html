@@ -205,7 +205,8 @@
       }
 
       q-slider,
-      q-range {
+      q-range,
+      q-dial {
         --qbar-axis-opacity: 0.35;
         --qbar-color: var(--accent);
         --qbar-thumb-border: var(--background);
@@ -215,7 +216,8 @@
       }
 
       .field q-slider,
-      .field q-range {
+      .field q-range,
+      .field q-dial {
         --qbar-thumb-size: 0.8rem;
         font-size: 0.58rem;
         height: 3rem;
@@ -376,9 +378,9 @@
       <div class="workspace">
         <section class="panel controls" aria-label="Controls">
           <p class="note">
-            Every slider here is a qbar slider. A location sits on a normal
-            track as wide as its scale and recentres when you let go; a scale
-            sits on an uncapped exponential track with rate 1 / |location|.
+            Every control here is qbar. A location is a dial: drag the normal
+            track, as wide as its scale, under the fixed needle. A scale is a
+            slider on an uncapped exponential track with rate 1 / |location|.
           </p>
           <label>
             Distribution

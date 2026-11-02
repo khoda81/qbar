@@ -277,7 +277,7 @@ export class QBarElement<Step = unknown> extends HTMLElementBase {
       Math.round(vertical ? rect.width : rect.height),
     );
 
-    const quantile = this.#quantile;
+    const quantile = this.quantile;
     const scale = this.#scale;
     if (quantile === undefined || scale === undefined) {
       this.#paint({ length, crossLength, vertical, marks: [] });
@@ -295,7 +295,7 @@ export class QBarElement<Step = unknown> extends HTMLElementBase {
       scale,
       width: length,
       minSpacing,
-      ...(this.#density === undefined ? {} : { density: this.#density }),
+      ...(this.density === undefined ? {} : { density: this.density }),
     });
     const marks: Mark[] = [];
     for (const tick of ticks) {
@@ -515,8 +515,8 @@ export abstract class QTrackElement<Step = unknown> extends QBarElement<Step> {
   #ticks: readonly Tick<Step>[] = [];
   #length = 1;
   #initial: readonly number[] = [];
-  /** The thumb under the pointer while it is captured. */
-  #dragging: number | undefined;
+  /** The drag under the pointer while it is captured. */
+  #drag: Drag | undefined;
   readonly #names: readonly string[];
   readonly #thumbs: readonly HTMLDivElement[];
 
@@ -541,23 +541,19 @@ export abstract class QTrackElement<Step = unknown> extends QBarElement<Step> {
 
     this.addEventListener("pointerdown", (event) => {
       if (event.button !== 0 || this.#disabled || !this.quantile) return;
-      const position = this.#pointer(event);
-      const index = this.#nearestThumb(position);
-      if (index === undefined) return;
+      this.#initial = this.#values;
+      const drag = this.grab(this.#pointer(event), this.#length);
+      if (drag === undefined) return;
       event.preventDefault();
       this.setPointerCapture(event.pointerId);
-      this.#thumbs[index]!.focus();
-      this.#initial = this.#values;
-      this.#dragging = index;
-      this.#move(index, position);
+      this.#thumbs[drag.thumb]!.focus();
+      this.#drag = drag;
     });
     this.addEventListener("pointermove", (event) => {
-      if (this.#dragging !== undefined) {
-        this.#move(this.#dragging, this.#pointer(event));
-      }
+      this.#drag?.move(this.#pointer(event));
     });
     this.addEventListener("lostpointercapture", () => {
-      this.#dragging = undefined;
+      this.#drag = undefined;
       if (this.#initial !== this.#values) this.#emit("change");
     });
   }
@@ -732,13 +728,9 @@ export abstract class QTrackElement<Step = unknown> extends QBarElement<Step> {
   #nicest(position: number): Selection<Step> | undefined {
     const quantile = this.quantile;
     const scale = this.scale;
-    if (quantile === undefined || scale === undefined) return undefined;
-    const length = this.#length;
-    const lower = quantile(Math.max(0, position - 0.5) / length);
-    const upper = quantile(Math.min(length, position + 0.5) / length);
-    return -Infinity < lower && lower < upper && upper < Infinity
-      ? scale.select(lower, upper)
-      : undefined;
+    return quantile === undefined || scale === undefined
+      ? undefined
+      : nicest(quantile, scale, this.#length, position);
   }
 
   /** Ticks with at least half their full opacity: where thumbs stop. */
@@ -771,7 +763,19 @@ export abstract class QTrackElement<Step = unknown> extends QBarElement<Step> {
     return best;
   }
 
-  /** Moves a thumb to a position, between its neighbours. */
+  /**
+   * Starts a drag at a position, given the track length, or returns
+   * undefined to ignore the press. A thumb jumps to the press and follows the
+   * pointer.
+   */
+  protected grab(position: number, _length: number): Drag | undefined {
+    const thumb = this.#nearestThumb(position);
+    if (thumb === undefined) return undefined;
+    this.#move(thumb, position);
+    return { thumb, move: (position) => this.#move(thumb, position) };
+  }
+
+  /** Moves a thumb to the value at a position. */
   #move(index: number, position: number): void {
     const quantile = this.quantile;
     if (quantile === undefined) return;
@@ -781,20 +785,25 @@ export abstract class QTrackElement<Step = unknown> extends QBarElement<Step> {
     const snapped = this.hasAttribute("snap")
       ? nearest(this.#stops(), clamped)
       : undefined;
-    const picked =
+    this.choose(
+      index,
       snapped !== undefined && Math.abs(snapped.position - clamped) <= 8
         ? snapped.value
         : clamped === 0 || clamped === length
           ? quantile(clamped / length)
-          : (this.#nicest(clamped)?.value ?? quantile(clamped / length));
-
-    const values = this.#values.length === 0 ? [picked] : [...this.#values];
-    const value = Math.min(
-      values[index + 1] ?? Infinity,
-      Math.max(values[index - 1] ?? -Infinity, picked),
+          : (this.#nicest(clamped)?.value ?? quantile(clamped / length)),
     );
-    if (value === this.#values[index]) return;
-    values[index] = value;
+  }
+
+  /** Sets a thumb's value, between its neighbours, firing input on a change. */
+  protected choose(index: number, value: number): void {
+    const values = this.#values.length === 0 ? [value] : [...this.#values];
+    const between = Math.min(
+      values[index + 1] ?? Infinity,
+      Math.max(values[index - 1] ?? -Infinity, value),
+    );
+    if (between === this.#values[index]) return;
+    values[index] = between;
     this.thumbValues = values;
     this.#emit("input");
   }
@@ -946,6 +955,169 @@ export class QRangeElement<Step = unknown> extends QTrackElement<Step> {
   }
 }
 
+const dialStyles = `
+  :host {
+    cursor: grab;
+  }
+
+  :host(:active) {
+    cursor: grabbing;
+  }
+
+  :host(:disabled) {
+    cursor: default;
+  }
+
+  [part~="thumb"] {
+    border-radius: 3px;
+    height: calc(1.5 * var(--qbar-thumb-size, 1rem));
+    width: 6px;
+  }
+
+  :host(:not([orientation="horizontal"])) [part~="thumb"] {
+    height: 6px;
+    width: calc(1.5 * var(--qbar-thumb-size, 1rem));
+  }
+`;
+
+/**
+ * A one-value track that moves under a fixed indicator. The track is
+ * `track(value)`, so it recentres on every change while the indicator, a
+ * needle rather than a knob, stays where the track puts the value.
+ *
+ * Dragging moves the track with the pointer: the value pressed stays under
+ * it, and whatever lands under the indicator becomes the value, the nicest
+ * within half a pixel. A press near the indicator fine-tunes; one out in a
+ * sparse tail travels far. Keys, events and forms work as on
+ * QSliderElement, and `snap` applies to keys only.
+ */
+export class QDialElement<Step = unknown> extends QSliderElement<Step> {
+  #track: ((value: number) => Quantile) | undefined;
+
+  constructor() {
+    super();
+    const style = document.createElement("style");
+    style.textContent = dialStyles;
+    this.shadowRoot!.append(style);
+  }
+
+  /**
+   * The track centred on each value. track(v) must reach v, be finite at
+   * both ends, so that any value it shows can be dragged under the
+   * indicator, and rise with v at every probability.
+   */
+  get track(): ((value: number) => Quantile) | undefined {
+    return this.#track;
+  }
+
+  set track(track: ((value: number) => Quantile) | undefined) {
+    this.#track = track;
+    this.refresh();
+  }
+
+  /** track(value); set the track instead. */
+  override get quantile(): Quantile | undefined {
+    const track = this.#track;
+    const value = this.value;
+    return track === undefined || value === undefined
+      ? undefined
+      : track(value);
+  }
+
+  override set quantile(_: Quantile | undefined) {
+    throw new TypeError("a dial's quantile is track(value); set track instead");
+  }
+
+  /** Always estimated from the track: a fixed density can't follow it. */
+  override get density(): ((probability: number) => number) | undefined {
+    return undefined;
+  }
+
+  override set density(_: ((probability: number) => number) | undefined) {
+    throw new TypeError("a dial estimates its density from its track");
+  }
+
+  protected override get thumbValues(): readonly number[] {
+    return super.thumbValues;
+  }
+
+  protected override set thumbValues(values: readonly number[]) {
+    for (const value of values) {
+      if (!Number.isFinite(value)) {
+        throw new RangeError(`dial value must be finite; got ${value}`);
+      }
+    }
+    super.thumbValues = values;
+    // The track follows the value.
+    this.refresh();
+  }
+
+  protected override grab(position: number, length: number): Drag | undefined {
+    const track = this.#track;
+    const quantile = this.quantile;
+    const scale = this.scale;
+    if (track === undefined || quantile === undefined || scale === undefined) {
+      return undefined;
+    }
+    const ends = [quantile(0), quantile(1)];
+    if (!ends.every(Number.isFinite)) {
+      throw new RangeError(
+        `dial track must be finite at both ends; got ${ends.join(" and ")}`,
+      );
+    }
+    const probability = (position: number) =>
+      Math.min(1, Math.max(0, position / length));
+    const grabbed = quantile(probability(position));
+
+    return {
+      thumb: 0,
+      move: (position) => {
+        const p = probability(position);
+        // The value whose track puts the grabbed one under the pointer.
+        // Tracks rise with their value, so bisecting over the values the
+        // grabbed track spans finds it, or the nearer end when it lies
+        // beyond them. Their pixels bound how far one drag reaches.
+        let lo = 0;
+        let hi = 1;
+        while (1e-6 / length < hi - lo) {
+          const mid = (lo + hi) / 2;
+          if (track(quantile(mid))(p) < grabbed) lo = mid;
+          else hi = mid;
+        }
+        const value = quantile(hi);
+        const centred = track(value);
+        const at = locate(centred, length, value);
+        this.choose(
+          0,
+          (at === undefined
+            ? undefined
+            : nicest(centred, scale, length, at)?.value) ?? value,
+        );
+      },
+    };
+  }
+}
+
+/** A drag in progress: the thumb it focuses and what each pointer move does. */
+interface Drag {
+  readonly thumb: number;
+  move(position: number): void;
+}
+
+/** The coarsest tick within half a pixel of a position on a track. */
+function nicest<Step>(
+  quantile: Quantile,
+  scale: TickScale<Step>,
+  length: number,
+  position: number,
+): Selection<Step> | undefined {
+  const lower = quantile(Math.max(0, position - 0.5) / length);
+  const upper = quantile(Math.min(length, position + 0.5) / length);
+  return -Infinity < lower && lower < upper && upper < Infinity
+    ? scale.select(lower, upper)
+    : undefined;
+}
+
 function nearest<Step>(
   ticks: readonly Tick<Step>[],
   position: number,
@@ -990,4 +1162,8 @@ export function defineQSlider(tagName = "q-slider"): typeof QSliderElement {
 
 export function defineQRange(tagName = "q-range"): typeof QRangeElement {
   return define(tagName, QRangeElement);
+}
+
+export function defineQDial(tagName = "q-dial"): typeof QDialElement {
+  return define(tagName, QDialElement);
 }

@@ -151,6 +151,7 @@ as powers of two for byte sizes. Each rung is an integer ratio
 | `<q-bar>`    | `defineQBar()`    | none; it is an axis            |
 | `<q-slider>` | `defineQSlider()` | `value`, `label`               |
 | `<q-range>`  | `defineQRange()`  | `range: [low, high]`, `labels` |
+| `<q-dial>`   | `defineQDial()`   | `value`, `label`               |
 
 Importing `@qbar/qbar/element` registers nothing until you call these.
 
@@ -167,6 +168,21 @@ Importing `@qbar/qbar/element` registers nothing until you call these.
   `role="slider"` elements named after the element's label. Like
   `<input type="range">`, sliders fire `input` and `change` for user
   interaction only.
+- **Dials** are sliders whose track moves instead of the thumb. Set
+  `track: (value) => quantile` rather than `quantile`: the dial shows
+  `track(value)`, with a fixed needle where it reaches the value. Dragging
+  carries the track with the pointer, so a press near the needle fine-tunes
+  and one in a sparse tail travels far. Each track must rise with its value
+  and be finite at both ends.
+
+  ```ts
+  // A logistic track around the location, cut a billionth from each end.
+  dial.track = (location) => (p) => {
+    const q = Math.min(1 - 1e-9, Math.max(1e-9, p));
+    return location + 4 * Math.log(q / (1 - q));
+  };
+  ```
+
 - **Forms:** sliders are form controls. With a `name`, a form submits the
   raw value, and `<q-range>` repeats the name for both ends, like
   `<select multiple>`: `window=24&window=64`. Reset restores `defaultValue`

@@ -1,15 +1,25 @@
 /** Closed-form and black-box distributions for the playground. */
 
+type Track = (p: number) => number;
+
 /**
- * A parameter is itself chosen on a qbar slider. Its track is a quantile
- * that may depend on the other parameters' current values and on its anchor:
- * its own value when the last interaction on it ended.
+ * A parameter is itself chosen on a qbar control, whose track may depend on
+ * the other parameters' current values. A slider's track is fixed by them; a
+ * dial's also centres on the parameter's own value, and moves with it.
  */
-export interface Parameter {
+export type Parameter = {
   readonly name: string;
   readonly value: number;
-  track(values: readonly number[], anchor: number): (p: number) => number;
-}
+} & (
+  | {
+      readonly control: "slider";
+      track(values: readonly number[]): Track;
+    }
+  | {
+      readonly control: "dial";
+      track(values: readonly number[], value: number): Track;
+    }
+);
 
 export interface Distribution {
   readonly name: string;
@@ -89,27 +99,30 @@ function invert(cdf: (x: number) => number, p: number): number {
   return (lo + hi) / 2;
 }
 
-/** A location on a normal track: anchor ± a few of `spread`. */
-const around =
-  (spread: (values: readonly number[]) => number) =>
-  (values: readonly number[], anchor: number) =>
-  (p: number) =>
-    anchor + spread(values) * normalQuantile(p);
+const dial = (track: (values: readonly number[], value: number) => Track) => ({
+  control: "dial" as const,
+  track,
+});
+
+/** A location on a normal track: the value ± a few of `spread`. */
+const around = (spread: (values: readonly number[]) => number) =>
+  dial((values, value) => (p) => value + spread(values) * normalQuantile(p));
 
 /** A scale on an uncapped exponential track with the given mean. */
-const exponential =
-  (mean: (values: readonly number[]) => number) =>
-  (values: readonly number[]) =>
-  (p: number) =>
-    -mean(values) * Math.log1p(-p);
+const exponential = (mean: (values: readonly number[]) => number) => ({
+  control: "slider" as const,
+  track: (values: readonly number[]) => (p: number) =>
+    -mean(values) * Math.log1p(-p),
+});
 
 /**
- * A positive value that anchors itself walks multiplicatively: a log-normal
- * track around the anchor. An exponential track scaled by its own anchor
- * would collapse for good once dragged to zero.
+ * A positive value centred on itself walks multiplicatively: a log-normal
+ * track around it. An exponential track scaled by its own value would
+ * collapse for good once dragged to zero.
  */
-const multiplicative = (_: readonly number[], anchor: number) => (p: number) =>
-  anchor * Math.exp(normalQuantile(p));
+const multiplicative = dial(
+  (_, value) => (p) => value * Math.exp(normalQuantile(p)),
+);
 
 /** Rate 1 / |location|, or 1 near zero. */
 const byMagnitude = (index: number) => (values: readonly number[]) =>
@@ -120,8 +133,8 @@ export const DISTRIBUTIONS: readonly Distribution[] = [
     name: "Normal",
     note: "Symmetric, light tails: fine ticks gather in the middle.",
     parameters: [
-      { name: "mean", value: 50, track: around(([, sd]) => sd!) },
-      { name: "sd", value: 10, track: exponential(byMagnitude(0)) },
+      { name: "mean", value: 50, ...around(([, sd]) => sd!) },
+      { name: "sd", value: 10, ...exponential(byMagnitude(0)) },
     ],
     quantile: (p, [mean, sd]) => mean! + sd! * normalQuantile(p),
     pdf: (x, [mean, sd]) => normalPdf((x - mean!) / sd!) / sd!,
@@ -133,12 +146,13 @@ export const DISTRIBUTIONS: readonly Distribution[] = [
       {
         name: "median",
         value: 20,
-        track:
-          ([, sigma], anchor) =>
-          (p) =>
-            anchor * Math.exp(sigma! * normalQuantile(p)),
+        ...dial(
+          ([, sigma], value) =>
+            (p) =>
+              value * Math.exp(sigma! * normalQuantile(p)),
+        ),
       },
-      { name: "sigma", value: 0.6, track: exponential(() => 0.5) },
+      { name: "sigma", value: 0.6, ...exponential(() => 0.5) },
     ],
     quantile: (p, [median, sigma]) =>
       median! * Math.exp(sigma! * normalQuantile(p)),
@@ -149,8 +163,8 @@ export const DISTRIBUTIONS: readonly Distribution[] = [
     name: "Logistic",
     note: "Closed-form quantile log(p / (1 − p)) with heavier tails than normal.",
     parameters: [
-      { name: "location", value: 30, track: around(([, scale]) => scale!) },
-      { name: "scale", value: 4, track: exponential(byMagnitude(0)) },
+      { name: "location", value: 30, ...around(([, scale]) => scale!) },
+      { name: "scale", value: 4, ...exponential(byMagnitude(0)) },
     ],
     quantile: (p, [location, scale]) =>
       location! + scale! * Math.log(p / (1 - p)),
@@ -163,7 +177,7 @@ export const DISTRIBUTIONS: readonly Distribution[] = [
       {
         name: "mean",
         value: 15,
-        track: multiplicative,
+        ...multiplicative,
       },
     ],
     quantile: (p, [mean]) => -mean! * Math.log1p(-p),
@@ -176,12 +190,13 @@ export const DISTRIBUTIONS: readonly Distribution[] = [
       {
         name: "location",
         value: 20,
-        track:
-          ([, scale], anchor) =>
-          (p) =>
-            anchor + scale! * Math.tan(Math.PI * (p - 0.5)),
+        ...dial(
+          ([, scale], value) =>
+            (p) =>
+              value + scale! * Math.tan(Math.PI * (p - 0.5)),
+        ),
       },
-      { name: "scale", value: 2, track: exponential(byMagnitude(0)) },
+      { name: "scale", value: 2, ...exponential(byMagnitude(0)) },
     ],
     quantile: (p, [location, scale]) =>
       p <= 0
@@ -199,9 +214,9 @@ export const DISTRIBUTIONS: readonly Distribution[] = [
       {
         name: "minimum",
         value: 5,
-        track: multiplicative,
+        ...multiplicative,
       },
-      { name: "alpha", value: 1.5, track: exponential(() => 1.5) },
+      { name: "alpha", value: 1.5, ...exponential(() => 1.5) },
     ],
     quantile: (p, [minimum, alpha]) => minimum! * (1 - p) ** (-1 / alpha!),
     pdf: (x, [minimum, alpha]) =>
@@ -211,16 +226,16 @@ export const DISTRIBUTIONS: readonly Distribution[] = [
     name: "Bimodal",
     note: "A mixture with no closed-form quantile, inverted from its CDF by bisection.",
     parameters: [
-      { name: "left", value: 10, track: around(([, , spread]) => 4 * spread!) },
+      { name: "left", value: 10, ...around(([, , spread]) => 4 * spread!) },
       {
         name: "right",
         value: 45,
-        track: around(([, , spread]) => 4 * spread!),
+        ...around(([, , spread]) => 4 * spread!),
       },
       {
         name: "spread",
         value: 3,
-        track: exponential(([left, right]) =>
+        ...exponential(([left, right]) =>
           Math.max(0.5, Math.abs(right! - left!) / 4),
         ),
       },
@@ -228,10 +243,12 @@ export const DISTRIBUTIONS: readonly Distribution[] = [
         // Logit-normal: bounded by (0, 1) yet uncapped in log-odds.
         name: "weight",
         value: 0.5,
-        track: (_, anchor) => (p) =>
-          1 /
-          (1 +
-            Math.exp(-(Math.log(anchor / (1 - anchor)) + normalQuantile(p)))),
+        ...dial(
+          (_, value) => (p) =>
+            1 /
+            (1 +
+              Math.exp(-(Math.log(value / (1 - value)) + normalQuantile(p)))),
+        ),
       },
     ],
     quantile: (p, [left, right, spread, weight]) =>
@@ -249,11 +266,11 @@ export const DISTRIBUTIONS: readonly Distribution[] = [
     name: "Uniform",
     note: "A linear quantile: one step size across the whole bar.",
     parameters: [
-      { name: "low", value: 0, track: around(([, width]) => width!) },
+      { name: "low", value: 0, ...around(([, width]) => width!) },
       {
         name: "width",
         value: 40,
-        track: exponential((values) => Math.max(10, Math.abs(values[0]!))),
+        ...exponential((values) => Math.max(10, Math.abs(values[0]!))),
       },
     ],
     quantile: (p, [low, width]) => low! + p * width!,

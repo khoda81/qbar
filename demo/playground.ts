@@ -13,9 +13,11 @@ import {
 } from "../src/index.ts";
 import {
   defineQBar,
+  defineQDial,
   defineQRange,
   defineQSlider,
   QBarElement,
+  QDialElement,
   QRangeElement,
   QSliderElement,
 } from "../src/element.ts";
@@ -24,6 +26,7 @@ import { DISTRIBUTIONS, type Distribution } from "./distributions.ts";
 defineQBar();
 defineQSlider();
 defineQRange();
+defineQDial();
 
 const minute = 60_000;
 const now = Math.round(Date.now() / minute) * minute;
@@ -126,7 +129,6 @@ function origin(): number {
 const state = {
   distribution: DISTRIBUTIONS[0]!,
   values: [] as number[],
-  anchors: [] as number[],
   unit: "number" as Unit,
   chain: [1, 5] as DecimalChain,
   analytic: false,
@@ -289,32 +291,39 @@ function resetValue(): void {
   requestAnimationFrame(readout);
 }
 
-// Each parameter is a qbar slider whose track depends on the others.
-const parameterSliders: QSliderElement[] = [];
+// Each parameter is a qbar slider or dial whose track depends on the others.
+const retracks: (() => void)[] = [];
 const parameterScale = decimalTicks({ multipliers: [1, 2] });
 
 function retrack(): void {
-  state.distribution.parameters.forEach((parameter, index) => {
-    const control = parameterSliders[index]!;
-    control.quantile = truncated(
-      parameter.track(state.values, state.anchors[index]!),
-    );
-  });
+  for (const retrackOne of retracks) retrackOne();
 }
 
 function buildParameters(): void {
   const { parameters } = state.distribution;
   state.values = parameters.map(({ value }) => value);
-  state.anchors = [...state.values];
   parametersRoot.replaceChildren();
-  parameterSliders.length = 0;
+  retracks.length = 0;
 
   parameters.forEach((parameter, index) => {
     const field = document.createElement("div");
     field.className = "field";
     field.innerHTML = `<div class="field__row"><span>${parameter.name}</span><output></output></div>`;
     const output = field.querySelector("output")!;
-    const control = new QSliderElement();
+    let control: QSliderElement;
+    if (parameter.control === "dial") {
+      const dial = new QDialElement();
+      retracks.push(() => {
+        dial.track = (value) => truncated(parameter.track(state.values, value));
+      });
+      control = dial;
+    } else {
+      const slider = new QSliderElement();
+      retracks.push(() => {
+        slider.quantile = truncated(parameter.track(state.values));
+      });
+      control = slider;
+    }
     control.setAttribute("orientation", "horizontal");
     control.setAttribute("min-spacing", "14");
     control.setAttribute("full-spacing", "40");
@@ -323,21 +332,16 @@ function buildParameters(): void {
     control.value = parameter.value;
     field.append(control);
     parametersRoot.append(field);
-    parameterSliders.push(control);
 
     const show = () => (output.textContent = control.label ?? "");
     control.addEventListener("input", () => {
       state.values[index] = control.value!;
       show();
-      // The other tracks follow; this one keeps its anchor until release.
       retrack();
       update();
     });
-    control.addEventListener("change", () => {
-      state.anchors[index] = control.value!;
-      retrack();
-      requestAnimationFrame(show);
-    });
+    // The label's precision follows the ticks laid out after the change.
+    control.addEventListener("change", () => requestAnimationFrame(show));
     requestAnimationFrame(show);
   });
   retrack();

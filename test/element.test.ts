@@ -3,9 +3,11 @@ import { describe, expect, test } from "bun:test";
 const definitions = new Map<string, unknown>();
 const {
   QBarElement,
+  QDialElement,
   QRangeElement,
   QSliderElement,
   defineQBar,
+  defineQDial,
   defineQRange,
   defineQSlider,
 } = await import("../src/element.ts");
@@ -40,6 +42,13 @@ describe("QBarElement registration", () => {
   test("registers the range slider", () => {
     expect(defineQRange()).toBe(QRangeElement);
     expect(definitions.get("q-range")).toBe(QRangeElement);
+  });
+
+  test("registers the dial, a slider", () => {
+    expect(defineQDial()).toBe(QDialElement);
+    expect(definitions.get("q-dial")).toBe(QDialElement);
+    expect(QDialElement.prototype instanceof QSliderElement).toBe(true);
+    expect(QDialElement.formAssociated).toBe(true);
   });
 
   test("makes the tracks form controls, not the bar", () => {
