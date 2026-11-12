@@ -134,7 +134,10 @@ function smoothstep(edge0: number, edge1: number, value: number): number {
  * Every change is laid out again, but the SVG is rebuilt only when a tick
  * would visibly move, fade or change its label. Replacing the quantile each
  * animation frame, as times counted from a moving now need, is therefore
- * cheap while the ticks crawl.
+ * cheap while the ticks crawl. The bar's size is the one its ResizeObserver
+ * last reported, so rendering never reads layout: a page that moves other
+ * elements and then replaces quantiles each frame doesn't force a layout per
+ * bar.
  */
 export class QBarElement<Step = unknown> extends HTMLElementBase {
   static readonly observedAttributes = [
@@ -148,6 +151,11 @@ export class QBarElement<Step = unknown> extends HTMLElementBase {
   #scale: TickScale<Step> | undefined;
   #format: ((value: number, step: Step) => string) | undefined;
   #resizeObserver: ResizeObserver | undefined;
+  /**
+   * The host's content box as last laid out; undefined until its observer
+   * first reports it.
+   */
+  #size: { readonly width: number; readonly height: number } | undefined;
   #frame: number | undefined;
   #generatedAriaLabel: string | undefined;
   /** What the SVG shows; undefined before the first render. */
@@ -237,14 +245,20 @@ export class QBarElement<Step = unknown> extends HTMLElementBase {
       this.setAttribute("role", "img");
     }
 
-    this.#resizeObserver = new ResizeObserver(() => this.refresh());
+    // An observer always reports the size it starts observing, which renders
+    // the bar the first time.
+    this.#resizeObserver = new ResizeObserver(([entry]) => {
+      const { width, height } = entry!.contentRect;
+      this.#size = { width, height };
+      this.refresh();
+    });
     this.#resizeObserver.observe(this);
-    this.refresh();
   }
 
   disconnectedCallback(): void {
     this.#resizeObserver?.disconnect();
     this.#resizeObserver = undefined;
+    this.#size = undefined;
 
     if (this.#frame !== undefined) {
       cancelAnimationFrame(this.#frame);
@@ -269,12 +283,15 @@ export class QBarElement<Step = unknown> extends HTMLElementBase {
   }
 
   #render(): void {
-    const rect = this.getBoundingClientRect();
+    // Until the observer reports a size there is nothing to lay out, and its
+    // report renders.
+    const size = this.#size;
+    if (size === undefined) return;
     const vertical = this.orientation === "vertical";
-    const length = Math.max(1, Math.round(vertical ? rect.height : rect.width));
+    const length = Math.max(1, Math.round(vertical ? size.height : size.width));
     const crossLength = Math.max(
       1,
-      Math.round(vertical ? rect.width : rect.height),
+      Math.round(vertical ? size.width : size.height),
     );
 
     const quantile = this.quantile;
